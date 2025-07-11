@@ -1,6 +1,6 @@
 # Amazon VPC Lattice - EC2 Instance & IP target type
 
-![EC2 Instance & IP target](../../../images/pattern1_architecture1.png)
+![EC2 Instance & IP target](../../../../images/pattern1_architecture1.png)
 
 ## Prerequisites
 - An AWS account with an IAM user with the appropriate permissions

@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provider VPC, EC2 Instances, and VPC Lattice services
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  ServiceNetworkId:
+    Type: String
+    Description: VPC Lattice service network ID.
+
+Resources:
+  # ---------- VPC LATTICE SERVICE ----------
+  VpcLatticeService:
+    Type: AWS::VpcLattice::Service
+    Properties:
+      Name: !Sub service-${AWS::StackName}
+      AuthType: NONE
+  
+  VpcLatticeServiceServiceAssociation:
+    Type: AWS::VpcLattice::ServiceNetworkServiceAssociation
+    Properties:
+      ServiceIdentifier: !Ref VpcLatticeService
+      ServiceNetworkIdentifier: !Ref ServiceNetworkId
+  
+  VpcLatticeServiceHTTPSListener:
+    Type: AWS::VpcLattice::Listener
+    Properties:
+      Name: https-service-listener
+      ServiceIdentifier: !Ref VpcLatticeService
+      Port: 443
+      Protocol: HTTPS
+      DefaultAction: 
+        Forward:
+          TargetGroups:
+            - TargetGroupIdentifier: !Ref VpcLatticeTargetGroup
+              Weight: 100
+
+  VpcLatticeTargetGroup:
+    Type: AWS::VpcLattice::TargetGroup
+    Properties:
+      Name: target-lambda
+      Type: LAMBDA
+      Config:
+        LambdaEventStructureVersion: V2
+      Targets:
+        - Id: !GetAtt LambdaFunction.Arn
+
+  # ---------- LAMBDA FUNCTION ----------
+  # IAM Role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: lambda-vpc-lattice-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # Lambda Function
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: lambda-vpclattice-target
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.13
+      Code:
+        ZipFile: |
+          import json
+
+          def lambda_handler(event, context):
+              # Extract headers from the event
+              headers = event.get('headers', {}) if event.get('headers') else {}
+              
+              # Create response with headers and message
+              response_body = {
+                  'message': 'Hello from Lambda!',
+                  'received_headers': headers
+              }
+              
+              return {
+                  'statusCode': 200,
+                  'headers': {
+                      'Content-Type': 'application/json'
+                  },
+                  'body': json.dumps(response_body)
+              }
+
+  # Lambda Permission for VPC Lattice
+  LambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Action: lambda:InvokeFunction
+      Principal: vpc-lattice.amazonaws.com
+      SourceArn: !GetAtt VpcLatticeTargetGroup.Arn
+
+Outputs:
+  ServiceDomainName:
+    Type: String
+    Value: !GetAtt VpcLatticeService.DnsEntry.DomainName

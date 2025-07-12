@@ -1,4 +1,4 @@
-# Amazon VPC Lattice - EC2 Instance & IP target type
+# Amazon VPC Lattice - Auto Scaling group target
 
 ![EC2 Instance & IP target](../../../../images/pattern1_architecture2.png)
 

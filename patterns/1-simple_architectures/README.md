@@ -29,7 +29,7 @@ In this example, EC2 instances (1 per AZ) are the VPC Lattice targets. The follo
 
 **Note**: An [egress-only Internet gateway](https://docs.aws.amazon.com/vpc/latest/userguide/egress-only-internet-gateway.html) is created in the provider VPC to allow the EC2 instances to install the packages needed to be configured as web servers. IPv6 is used to not have any extra infrastructure cost (NAT gateways), and provide an easy configure for egress access.
 
-## Auto-scaling group
+## Auto Scaling group
 
 In this example, an [Auto-scaling group](https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-groups.html) is the VPC Lattice target. The following resources are created:
 

@@ -1,4 +1,3 @@
-# Custom domain configuration
 .PHONY: deploy deploy-sn deploy-consumer-provider undeploy
 
 deploy: deploy-sn deploy-consumer-provider

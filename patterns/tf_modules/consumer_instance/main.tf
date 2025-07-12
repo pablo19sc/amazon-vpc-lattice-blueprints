@@ -11,24 +11,6 @@ resource "aws_security_group" "instance_sg" {
   vpc_id      = var.vpc.vpc_attributes.id
 }
 
-resource "aws_vpc_security_group_ingress_rule" "allowing_ingress_icmp" {
-  security_group_id = aws_security_group.instance_sg.id
-
-  from_port   = -1
-  to_port     = -1
-  ip_protocol = "icmp"
-  cidr_ipv4   = "0.0.0.0/0"
-}
-
-resource "aws_vpc_security_group_ingress_rule" "allowing_ingress_icmp_ipv6" {
-  security_group_id = aws_security_group.instance_sg.id
-
-  from_port   = -1
-  to_port     = -1
-  ip_protocol = "icmp"
-  cidr_ipv6   = "::/0"
-}
-
 resource "aws_vpc_security_group_ingress_rule" "allowing_ingress_eic" {
   security_group_id = aws_security_group.instance_sg.id
 

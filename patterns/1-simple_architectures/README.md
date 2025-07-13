@@ -5,7 +5,7 @@ Within this section of the blueprints, we will cover a simple architecture: a co
 1. VPC Lattice targets - showing how to target different compute capacities using VPC Lattice:
     * [EC2 instances](./1-ec2_instance/) (using `INSTANCE` and `IP` target types)
     * [Auto-scaling group.](./2-auto_scaling_group/)
-    * AWS Lambda function.
+    * [AWS Lambda function.](./3-lambda_function/)
     * Amazon ECS.
     * Amazon EKS.
 2. VPC resource configurations - showing how you can consume VPC resources (TCP) using VPC Lattice:
@@ -40,3 +40,13 @@ In this example, an [Auto-scaling group](https://docs.aws.amazon.com/autoscaling
     * 1 VPC Lattice services with HTTPS listener. The listener has a default forward action sending all the traffic to the only target group created.
 
 ![EC2 Instance & IP target](../../images/pattern1_architecture2.png)
+
+## AWS Lambda function
+
+In this example, an AWS Lambda function() is the VPC Lattice target. The following resources are created:
+
+* Consumer VPC with EC2 instances (1 per AZ) as consumers, and an [EC2 Instance Connect endpoint](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-using-eice.html) to access the consumer instances.
+* AWS Lambda function.
+* VPC Lattice resources:
+    * 1 target groups type `INSTANCE`.
+    * 1 VPC Lattice services with HTTPS listener. The listener has a default forward action sending all the traffic to the only target group created.

@@ -1,7 +1,7 @@
 /* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  SPDX-License-Identifier: MIT-0 */
 
-# --- patterns/1-simple_architectures/1-ec2_instance/terraform/providers.tf ---
+# --- patterns/1-simple_architectures/2-auto_scaling_group/terraform/providers.tf ---
 
 terraform {
   required_version = ">= 1.3.0"

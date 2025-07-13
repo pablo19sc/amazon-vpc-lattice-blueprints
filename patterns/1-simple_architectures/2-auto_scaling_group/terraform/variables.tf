@@ -1,7 +1,7 @@
 /* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  SPDX-License-Identifier: MIT-0 */
 
-# --- patterns/1-simple_architectures/1-ec2_instance/terraform/variables.tf ---
+# --- patterns/1-simple_architectures/2-auto_scaling_group/terraform/variables.tf ---
 
 variable "identifier" {
   type        = string

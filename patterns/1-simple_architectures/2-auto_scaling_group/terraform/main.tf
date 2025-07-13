@@ -1,7 +1,7 @@
 /* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  SPDX-License-Identifier: MIT-0 */
 
-# --- patterns/1-simple_architectures/1-ec2_instance/terraform/main.tf ---
+# --- patterns/1-simple_architectures/2-auto_scaling_group/terraform/main.tf ---
 
 # Data source: Amazon VPC Lattice prefix list (IPv4 and IPv6)
 data "aws_ec2_managed_prefix_list" "vpclattice_pl_ipv4" {
@@ -235,11 +235,54 @@ resource "aws_launch_template" "launch_template_webinstance" {
   user_data = base64encode(<<-EOF
 #!/bin/bash
 sudo yum update -y
-sudo yum install -y httpd
+sudo yum install -y httpd python3
 sudo systemctl start httpd
 sudo systemctl enable httpd
 sudo chown -R $USER:$USER /var/www
-sudo echo "<html><body><h1>Hello from AutoScaling Group!!</h1></body></html>" > /var/www/html/index.html
+
+# Create a Python script to handle requests and show headers
+cat > /var/www/cgi-bin/index.py << 'EOT'
+#!/usr/bin/env python3
+import json
+import os
+
+print("Content-Type: application/json")
+print()
+
+# Get all environment variables (headers are passed as env variables with HTTP_ prefix)
+headers = {k[5:]: v for k, v in os.environ.items() if k.startswith('HTTP_')}
+
+# Create response with headers and message
+response = {
+    'message': 'Hello from the AutoScaling group!!',
+    'received_headers': headers
+}
+
+print(json.dumps(response))
+EOT
+
+# Make the script executable
+sudo chmod +x /var/www/cgi-bin/index.py
+
+# Enable CGI in Apache
+sudo mkdir -p /var/www/cgi-bin
+sudo sed -i 's/#LoadModule cgid_module/LoadModule cgid_module/' /etc/httpd/conf.modules.d/00-base.conf
+sudo sed -i 's/#LoadModule cgi_module/LoadModule cgi_module/' /etc/httpd/conf.modules.d/00-base.conf
+
+# Configure Apache to use index.py as default handler
+cat > /etc/httpd/conf.d/cgi-bin.conf << 'EOT'
+<Directory "/var/www/cgi-bin">
+    AllowOverride None
+    Options +ExecCGI
+    AddHandler cgi-script .py
+    Require all granted
+</Directory>
+
+DirectoryIndex /cgi-bin/index.py
+EOT
+
+# Restart Apache to apply changes
+sudo systemctl restart httpd
 EOF
   )
 

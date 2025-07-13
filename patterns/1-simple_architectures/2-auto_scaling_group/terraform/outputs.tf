@@ -1,7 +1,7 @@
 /* Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
  SPDX-License-Identifier: MIT-0 */
 
-# --- patterns/1-simple_architectures/1-ec2_instance/terraform/outputs.tf ---
+# --- patterns/1-simple_architectures/2-auto_scaling_group/terraform/outputs.tf ---
 
 output "vpclattice_service_domain_name" {
   description = "VPC Lattice service domain name."

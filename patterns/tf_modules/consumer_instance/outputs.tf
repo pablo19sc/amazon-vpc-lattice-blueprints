@@ -10,5 +10,5 @@ output "consumer_sg" {
 
 output "ec2_instances" {
   description = "EC2 Instance IDs"
-  value = [ for i in aws_instance.ec2_instance: i.id ]
+  value       = [for i in aws_instance.ec2_instance : i.id]
 }

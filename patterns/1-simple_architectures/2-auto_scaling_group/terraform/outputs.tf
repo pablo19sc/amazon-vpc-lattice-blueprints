@@ -7,3 +7,8 @@ output "vpclattice_service_domain_name" {
   description = "VPC Lattice service domain name."
   value       = module.service.services.service.attributes.dns_entry[0].domain_name
 }
+
+output "consumer_instance_ids" {
+  description = "Consumer EC2 Instance IDs"
+  value       = module.consumer_instances.ec2_instances
+}

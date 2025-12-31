@@ -219,55 +219,28 @@ Resources:
         UserData:
           Fn::Base64: !Sub |
             #!/bin/bash
+            # Update system and install httpd
             sudo yum update -y
-            sudo yum install -y httpd python3
+            sudo yum install -y httpd php
+            
+            # Ensure httpd listens on both IPv4 and IPv6
+            sudo sed -i '/^Listen /d' /etc/httpd/conf/httpd.conf
+            echo "Listen 0.0.0.0:80" | sudo tee -a /etc/httpd/conf/httpd.conf
+            echo "Listen [::]:80" | sudo tee -a /etc/httpd/conf/httpd.conf
+            
             sudo systemctl start httpd
             sudo systemctl enable httpd
             sudo chown -R $USER:$USER /var/www
             
-            # Create a Python script to handle requests and show headers
-            cat > /var/www/cgi-bin/index.py << 'EOF'
-            #!/usr/bin/env python3
-            import json
-            import os
-            
-            print("Content-Type: application/json")
-            print()
-            
-            # Get all environment variables (headers are passed as env variables with HTTP_ prefix)
-            headers = {k[5:]: v for k, v in os.environ.items() if k.startswith('HTTP_')}
-            
-            # Create response with headers and message
-            response = {
-                'message': 'Hello from the AutoScaling group!!',
-                'received_headers': headers
-            }
-            
-            print(json.dumps(response))
-            EOF
-            
-            # Make the script executable
-            sudo chmod +x /var/www/cgi-bin/index.py
-            
-            # Enable CGI in Apache
-            sudo mkdir -p /var/www/cgi-bin
-            sudo sed -i 's/#LoadModule cgid_module/LoadModule cgid_module/' /etc/httpd/conf.modules.d/00-base.conf
-            sudo sed -i 's/#LoadModule cgi_module/LoadModule cgi_module/' /etc/httpd/conf.modules.d/00-base.conf
-            
-            # Configure Apache to use index.py as default handler
-            cat > /etc/httpd/conf.d/cgi-bin.conf << 'EOF'
-            <Directory "/var/www/cgi-bin">
-                AllowOverride None
-                Options +ExecCGI
-                AddHandler cgi-script .py
-                Require all granted
-            </Directory>
-            
-            DirectoryIndex /cgi-bin/index.py
-            EOF
-            
-            # Restart Apache to apply changes
-            sudo systemctl restart httpd
+            # Create index.php to show request source IP
+            cat > /var/www/html/index.php <<'HTML'
+            <html>
+            <body>
+            <h1>Hello from the AutoScaling Group!!</h1>
+            <p><strong>Request IP address:</strong> <?php echo $_SERVER['REMOTE_ADDR']; ?></p>
+            </body>
+            </html>
+            HTML
         TagSpecifications:
           - ResourceType: instance
             Tags:

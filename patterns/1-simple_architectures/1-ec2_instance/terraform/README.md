@@ -1,36 +1,81 @@
 <!-- BEGIN_TF_DOCS -->
-# Amazon VPC Lattice - EC2 Instance & IP target type
+# Amazon VPC Lattice - EC2 Instance Targets (Terraform)
 
-![EC2 Instance & IP target](../../../../images/pattern1\_architecture1.png)
+![EC2 Instance & IP target](../../../images/pattern1\_architecture1.png)
 
 ## Prerequisites
-- An AWS account with an IAM user with the appropriate permissions
-- Terraform installed
 
-## Code Principles:
-- Writing DRY (Do No Repeat Yourself) code using a modular design pattern
+- **AWS Account**: With appropriate IAM permissions
+- **Terraform**: >= 1.3.0 installed
+- **AWS CLI**: Configured with credentials (optional, for verification)
+- **ACM Certificate**: (Optional) For custom domain name configuration
+- **Route 53 Hosted Zone**: (Optional) For custom domain name configuration
+- **Permissions required**:
+  - VPC Lattice: Service networks, services, target groups
+  - EC2: VPC, subnets, instances, security groups
+  - IAM: Create roles and policies
+  - Route 53: (Optional) Hosted zone management
+  - ACM: (Optional) Certificate management
 
-## Usage
-- Clone the repository.
-- Provide a `custom_domain_name`, `certificate_arn`, and `hosted_zone_name` to test the creation of a VPC Lattice service with a custom domain name. We recommend the use of a [terraform.tfvars](https://developer.hashicorp.com/terraform/language/values/variables) file.
-- (Optional) Edit other variables under variables.tf file in the project root directory - if you want to test with different parameters.
-- Deploy the resources using `terraform apply`.
-- Remember to clean up resoures once you are done by using `terraform destroy`.
+## Deployment
 
-**Note** EC2 instances will be deployed in all the Availability Zones configured for each VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.
+```bash
+# Clone the repository
+git clone https://github.com/aws-samples/amazon-vpc-lattice-blueprints.git
+
+# Navigate to the Terraform directory
+cd patterns/1-simple_architectures/1-ec2_instance/terraform
+
+# Configure custom domain name
+# (Recommended) Create terraform.tfvars to set:
+# - custom_domain_name
+# - certificate_arn
+# - hosted_zone_name
+
+# Initialize Terraform
+terraform init
+
+# (Optional) Review the planned changes
+terraform plan
+
+# Deploy the resources
+terraform apply
+```
+
+> **Note**: EC2 instances will be deployed in all the Availability Zones configured for the VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.
+
+## Cleanup
+
+```bash
+# Destroy all resources
+terraform destroy
+```
+
+## Testing
+
+After deployment, follow the testing steps in the [Pattern 1 - EC2 Instance Testing Connectivity section](../README.md#testing-connectivity) to verify connectivity between consumer and provider instances through both VPC Lattice services.
+
+## Next Steps
+
+After successfully deploying this pattern:
+
+1. **Test connectivity**: Follow the testing guide to verify both services work correctly
+2. **Explore other targets**: Try [Auto Scaling Group](../../2-auto\_scaling\_group/), [Lambda](../../3-lambda\_function/), or [ECS](../../4-ecs/) patterns
+3. **Multi-Account**: Move to [Multi-Account patterns](../../../2-multi\_account/) for cross-account deployments
+4. **Advanced architectures**: Explore [Advanced patterns](../../../3-advanced\_architectures/) for hybrid and cross-Region scenarios
 
 ## Requirements
 
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.67.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.0.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.67.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.27.0 |
 
 ## Modules
 
@@ -79,6 +124,6 @@
 
 | Name | Description |
 |------|-------------|
-| <a name="output_service1_domain_name"></a> [service1\_domain\_name](#output\_service1\_domain\_name) | VPC Lattice service1 domain name. |
-| <a name="output_service2_domain_name"></a> [service2\_domain\_name](#output\_service2\_domain\_name) | VPC Lattice service2 domain name. |
+| <a name="output_consumer_instance_ids"></a> [consumer\_instance\_ids](#output\_consumer\_instance\_ids) | Consumer EC2 Instance IDs |
+| <a name="output_service_domain_names"></a> [service\_domain\_names](#output\_service\_domain\_names) | VPC Lattice services' domain names. |
 <!-- END_TF_DOCS -->

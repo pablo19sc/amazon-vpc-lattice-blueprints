@@ -338,12 +338,22 @@ resource "aws_instance" "web_instance" {
 
   user_data = <<-EOF
 #!/bin/bash
+# Update system and install httpd
 sudo yum update -y
-sudo yum install -y httpd
+sudo yum install -y httpd php
 sudo systemctl start httpd
 sudo systemctl enable httpd
 sudo chown -R $USER:$USER /var/www
-sudo echo "<html><body><h1>Hello from EC2 instance</h1></body></html>" > /var/www/html/index.html
+
+# Create index.php to show request source IP
+cat > /var/www/html/index.php <<'HTML'
+<html>
+<body>
+<h1>Hello from EC2 instance</h1>
+<p><strong>Request IP address:</strong> <?php echo $_SERVER['REMOTE_ADDR']; ?></p>
+</body>
+</html>
+HTML
 EOF
 
   tags = {

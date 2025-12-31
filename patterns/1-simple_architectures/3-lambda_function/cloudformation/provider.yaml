@@ -73,13 +73,14 @@ Resources:
           import json
 
           def lambda_handler(event, context):
-              # Extract headers from the event
-              headers = event.get('headers', {}) if event.get('headers') else {}
+              # Extract the source IP from the request context
+              request_context = event.get('requestContext', {})
+              source_ip = request_context.get('http', {}).get('sourceIp', 'Unknown')
               
-              # Create response with headers and message
+              # Create response with message and request IP
               response_body = {
-                  'message': 'Hello from Lambda!',
-                  'received_headers': headers
+                  'message': 'Hello from Lambda Function!!',
+                  'request_ip': source_ip
               }
               
               return {

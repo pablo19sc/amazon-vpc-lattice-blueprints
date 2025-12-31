@@ -1,36 +1,71 @@
 <!-- BEGIN_TF_DOCS -->
-# Amazon VPC Lattice - AWS Lambda target
+# Amazon VPC Lattice - Lambda Function Target (Terraform)
 
-![EC2 Instance & IP target](../../../../images/pattern1\_architecture3.png)
+![Lambda Function target](../../../images/pattern1\_architecture3.png)
 
 ## Prerequisites
-- An AWS account with an IAM user with the appropriate permissions
-- Terraform installed
 
-## Code Principles:
-- Writing DRY (Do No Repeat Yourself) code using a modular design pattern
+- **AWS Account**: With appropriate IAM permissions
+- **Terraform**: >= 1.3.0 installed
+- **AWS CLI**: Configured with credentials (optional, for verification)
+- **Permissions required**:
+  - VPC Lattice: Service networks, services, target groups
+  - EC2: VPC, subnets, instances, security groups
+  - Lambda: Create functions and permissions
+  - IAM: Create roles and policies
 
-## Usage
-- Clone the repository.
-- (Optional) Edit the variables under variables.tf file in the project root directory - if you want to test with different parameters.
-- Deploy the resources using `terraform apply`.
-- Remember to clean up resoures once you are done by using `terraform destroy`.
+## Deployment
 
-**Note** EC2 instances will be deployed in all the Availability Zones configured for each VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.
+```bash
+# Clone the repository
+git clone https://github.com/aws-samples/amazon-vpc-lattice-blueprints.git
+
+# Navigate to the Terraform directory
+cd patterns/1-simple_architectures/3-lambda_function/terraform
+
+# Initialize Terraform
+terraform init
+
+# (Optional) Review the planned changes
+terraform plan
+
+# Deploy the resources
+terraform apply
+```
+
+## Cleanup
+
+```bash
+# Destroy all resources
+terraform destroy
+```
+
+## Testing
+
+After deployment, follow the testing steps in the [Pattern 3 - Lambda Function Testing Connectivity section](../README.md#testing-connectivity-2) to verify connectivity between consumer instances and the Lambda function through VPC Lattice.
+
+## Next Steps
+
+After successfully deploying this pattern:
+
+1. **Test connectivity**: Follow the testing guide to verify the service works correctly
+2. **Explore other targets**: Try [EC2 Instance](../../1-ec2\_instance/), [Lambda](../../3-lambda\_function/), or [ECS](../../4-ecs/) patterns
+3. **Multi-Account**: Move to [Multi-Account patterns](../../../2-multi\_account/) for cross-account deployments
+4. **Advanced architectures**: Explore [Advanced patterns](../../../3-advanced\_architectures/) for more complex scenarios
 
 ## Requirements
 
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 5.67.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 6.0.0 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_archive"></a> [archive](#provider\_archive) | n/a |
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 5.67.0 |
+| <a name="provider_archive"></a> [archive](#provider\_archive) | 2.7.1 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | 6.27.0 |
 
 ## Modules
 
@@ -67,5 +102,6 @@
 
 | Name | Description |
 |------|-------------|
+| <a name="output_consumer_instance_ids"></a> [consumer\_instance\_ids](#output\_consumer\_instance\_ids) | Consumer EC2 Instance IDs |
 | <a name="output_vpclattice_service_domain_name"></a> [vpclattice\_service\_domain\_name](#output\_vpclattice\_service\_domain\_name) | VPC Lattice service domain name. |
 <!-- END_TF_DOCS -->

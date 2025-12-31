@@ -1,13 +1,53 @@
-# Amazon VPC Lattice - AWS Lambda target
+# Amazon VPC Lattice - Lambda Function Target (AWS CloudFormation)
 
-![EC2 Instance & IP target](../../../../images/pattern1_architecture3.png)
+![Lambda Function target](../../../../images/pattern1_architecture3.png)
 
 ## Prerequisites
-- An AWS account with an IAM user with the appropriate permissions
 
-## Usage
-- Clone the repository.
-- Deploy the resources using `make deploy`.
-- Remember to clean up resoures once you are done by using `make undeploy`.
+- **AWS Account**: With appropriate IAM permissions
+- **AWS CLI**: Installed and configured with credentials
+- **Permissions required**:
+  - CloudFormation
+  - VPC Lattice
+  - EC2: VPC, subnets, instances, security groups
+  - Lambda: Create functions and permissions
+  - IAM: Create roles and policies
+- **Make**: Installed
 
-**Note** EC2 instances will be deployed in all the Availability Zones configured for each VPC. Keep this in mind when testing this environment from a cost perspective - for production environments, we recommend the use of at least 2 AZs for high-availability.
+## Deployment
+
+```bash
+# Clone the repository
+git clone https://github.com/aws-samples/amazon-vpc-lattice-blueprints.git
+
+# Navigate to the CloudFormation directory
+cd patterns/1-simple_architectures/3-lambda_function/cloudformation
+
+# Deploy everything (Networking + Consumer + Lambda Function)
+make deploy
+
+# Or deploy step-by-step:
+make deploy-sn        # Deploy networking and service network first
+make deploy-consumer  # Then deploy consumer VPC and instances
+make deploy-provider  # Finally deploy Lambda function and VPC Lattice service
+```
+
+## Cleanup
+
+```bash
+# Delete everything
+make undeploy
+```
+
+## Testing
+
+After successful deployment, follow the testing instructions in the [Testing Connectivity](../README.md#testing-connectivity-2) section of the Lambda Function pattern documentation.
+
+## Next Steps
+
+After successfully deploying this pattern:
+
+1. **Test connectivity**: Follow the testing guide to verify the service works correctly
+2. **Explore other targets**: Try [EC2 Instance](../../1-ec2_instance/), [Lambda](../../3-lambda_function/), or [ECS](../../4-ecs/) patterns
+3. **Multi-Account**: Move to [Multi-Account patterns](../../../2-multi_account/) for cross-account deployments
+4. **Advanced architectures**: Explore [Advanced patterns](../../../3-advanced_architectures/) for more complex scenarios

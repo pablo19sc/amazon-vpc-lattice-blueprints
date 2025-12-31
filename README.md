@@ -1,125 +1,249 @@
 # Amazon VPC Lattice Blueprints
 
-Welcome to the Amazon VPC Lattice Blueprints!
+Welcome to Amazon VPC Lattice Blueprints!
 
-This project offers practical guidance for deploying [Amazon VPC Lattice](https://aws.amazon.com/vpc/lattice/), featuring real-world examples and full end-to-end deployment code. These blueprints complement AWS documentation and AWS blogs by expanding on concepts with complete implementations in various Infrastructure as Code (IaC) languages.
+This project contains a collection of Amazon VPC Lattice patterns implemented in [AWS CloudFormation](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/Welcome.html) and [Terraform](https://developer.hashicorp.com/terraform) that demonstrate how to configure and deploy application networking using [Amazon VPC Lattice](https://aws.amazon.com/vpc/lattice/).
 
-Designed for network and application architects, the blueprints demonstrate how to effectively connect, secure, and monitor services across multiple accounts and VPCs using Amazon VPC Lattice. The examples assume a solid understanding of AWS networking concepts including VPCs, subnets, security groups, as well as service-to-service communication patterns and application networking principles.
+## Motivation
 
-The guide covers various architectures, from simple patterns showing the different targets the service supports to complex architectures (hybrid and cross-Region) and cross-Account patterns.
+Amazon VPC Lattice simplifies service-to-service communication by providing a fully managed application networking service that connects, secures, and monitors services across multiple accounts and VPCs. While VPC Lattice eliminates the need to manage load balancers, proxies, or complex networking configurations, understanding all the service's capabilities can be overwhelming, especially when designing production-grade architectures.
 
-## Table of Content
+AWS customers have asked for practical examples and best practices that demonstrate how to leverage VPC Lattice's full potential. These blueprints provide real-world use cases with complete, tested implementations that teams can use for:
 
-- [Consumption](#consumption)
-- [Patterns](#patterns)
-- [Amazon VPC Lattice components and features](#amazon-vpc-lattice-components-and-features)
-  - [Service Networks](#service-networks)
-  - [Services](#services)
-  - [VPC resources](#vpc-resources)
-  - [Associations and endpoints](#associations-and-endpoints)
-  - [Listeners and targets](#listeners-and-targets)
-  - [Security and observability](#security-and-observability)
-- [FAQ](#faq)
-- [Authors](#authors)
-- [Contributing](#contributing)
-- [License](#license)
+- **Proof of Concepts (PoCs)**: Quickly validate VPC Lattice capabilities in your environment.
+- **Testing and learning**: Understand how different features work together through hands-on examples.
+- **Starting point**: Use as a foundation for your application networking configurations.
+- **Best practices**: Learn recommended patterns for common service-to-service communication scenarios.
+
+With VPC Lattice Blueprints, customers can configure and deploy service-to-service architectures at scale in days, rather than spending weeks or months figuring out the optimal configuration.
 
 ## Consumption
 
-These blueprints have been designed to be consumed in the following manners:
+Amazon VPC Lattice Blueprints have been designed to be consumed in the following manners:
 
-* **Reference Architecture**. You can use the examples and patterns provided as a guide to build your target architecture. From the architectures (and code provided) you can review and test the specific architecture and use it as reference to replicate in your environment.
-* **Copy & paste**. You can do a quick copy-and-paste of a specific architecture snippet into your own environment, using the blueprints as the starting point for your implementation. You can then adapt the initial pattern to customize it to your specific needs. Of course, we recommend to deploy first in pre-production and have a controlled rollout to production environments after enough testing. 
+1. **Reference**: Users can refer to the patterns and snippets provided to help guide them to their desired solution. Users will typically view how the pattern or snippet is configured to achieve the desired end result and then replicate that in their environment.
 
-**The VPC Lattice blueprints are not intended to be consumed as-is directly from this project**. The patterns provided will use local variables (as defaults or required to be provided by you) that we recommend you change when deploying in your pre-production or testing environments.
+2. **Copy & Paste**: Users can copy and paste the patterns and snippets into their own environment, using VPC Lattice Blueprints as the starting point for their implementation. Users can then adapt the initial pattern to customize it to their specific needs.
+
+**Amazon VPC Lattice Blueprints are not intended to be consumed as-is directly from this project**. The patterns provided only contain `variables` when certain information is required to deploy the pattern and generally use local variables. If you wish to deploy the patterns into a different AWS Region or with other changes, it is recommended that you make those modifications locally before applying the pattern.
 
 ## Patterns
 
-1. [Simple architectures](./patterns/1-simple_architectures/)
-2. [Multi-account](./patterns/2-multi_account/)
-3. Advanced architectures (TBD)
-4. Auth policies & signing (TBD)
+| Pattern | Description | IaC Support |
+|---------|-------------|-------------|
+| [1. Simple Architectures](./patterns/1-simple_architectures/) | Basic VPC Lattice setup demonstrating different target types | CloudFormation, Terraform |
+| [2. Multi-AWS Account](./patterns/2-multi_account/) | Cross-account VPC Lattice deployment with AWS RAM sharing | CloudFormation, Terraform |
+| [3. Advanced Architectures](./patterns/3-advanced_architectures/) | Complex architectures including hybrid connectivity, cross-Region, and advanced connectivity patterns | CloudFormation, Terraform |
+| 4. Auth Policies & Signing | Authentication and authorization examples | Coming Soon |
 
-## Amazon VPC Lattice components and features
+## Infrastructure as Code Considerations
+
+Amazon VPC Lattice Blueprints do not intend to teach users the recommended practices for Infrastructure as Code (IaC) tools nor does it offer guidance on how users should structure their IaC projects. The patterns provided are intended to show users how they can achieve a defined architecture or configuration in a way that they can quickly and easily get up and running to start interacting with that pattern. Therefore, there are a few considerations users should be aware of when using VPC Lattice Blueprints:
+
+1. We recognize that most users will already have existing VPCs in separate IaC projects or stacks. However, the patterns provided come complete with VPCs to ensure stable, deployable examples that have been tested and validated.
+
+2. Patterns are not intended to be consumed in-place in the same manner that one would consume a reusable module. Therefore, we do not provide extensive parameters and outputs to expose various levels of configuration for the examples. Users can modify the pattern locally after cloning to suit their requirements.
+
+3. The patterns use local variables (Terraform) or parameters (CloudFormation) with sensible defaults. If you wish to deploy patterns into different regions or with other changes, modify these values before deploying.
+
+4. For production deployments, we recommend separating your infrastructure into multiple projects or stacks (e.g., network infrastructure, application services, monitoring resources) to follow IaC best practices and enable independent lifecycle management.
+
+## Amazon VPC Lattice Fundamentals
 
 [Amazon VPC Lattice](https://docs.aws.amazon.com/vpc-lattice/latest/ug/what-is-vpc-lattice.html) is a fully managed application networking service that you use to connect, secure, and monitor services across multiple accounts and VPCs. VPC Lattice simplifies connectivity between your services by eliminating the need to manage load balancers, proxies, or complex networking configurations.
 
-With VPC Lattice, we have seen customers simplify service-to-service communication while enabling advanced authentication, authorization, and monitoring capabilities. This project explores VPC Lattice's capabilities, configuration approaches, and deployment patterns, helping you build and optimize service mesh architectures.
+### Key Advantages
+
+| Capability | Description |
+|------------|-------------|
+| **Simplified Connectivity** | Eliminate complex networking configurations |
+| **Multi-Account Support** | Seamless service communication across AWS accounts |
+| **Built-in Security** | Fine-grained access control with auth policies |
+| **Comprehensive Observability** | Centralized monitoring and access logging |
+
+---
 
 ### Service Networks
 
-A [service network](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-networks.html) is the core construct in VPC Lattice that enables connectivity between services and clients. It acts as a logical boundary for a collection of services that can communicate with each other. Key characteristics of service networks include:
+A [service network](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-networks.html) is the core construct in VPC Lattice that enables connectivity between services and clients.
 
-* They can be [shared across AWS accounts](https://docs.aws.amazon.com/vpc-lattice/latest/ug/sharing.html) using AWS Resource Access Manager (RAM).
-* They support fine-grained access control through [auth policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html).
-* They provide [centralized monitoring](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-monitoring.html) and observability for all associated services.
+| Characteristic | Description |
+|----------------|-------------|
+| **Function** | Logical boundary for a collection of services |
+| **Cross-Account Sharing** | Supported via [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/vpc-lattice/latest/ug/sharing.html) |
+| **Access Control** | Fine-grained control through [auth policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) |
+| **Monitoring** | [Centralized observability](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-monitoring.html) for all associated services |
+
+---
 
 ### Services
 
-A VPC Lattice [service](https://docs.aws.amazon.com/vpc-lattice/latest/ug/services.html) represents an application or microservice that you want to make available to clients within your service network. Services are identified by a unique DNS name and can be backed by various compute resources such as EC2 instances, Auto-scaling groups, Lambda functions, or any IP-based target. Alternatively, you can define a [custom domain name](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-custom-domain-name.html) in your services. Services in VPC Lattice provide:
+A VPC Lattice [service](https://docs.aws.amazon.com/vpc-lattice/latest/ug/services.html) represents an application or microservice that you want to make available to clients within your service network.
 
-* Built-in load balancing capabilities.
-* Health checks for targets.
-* Support for multiple listener protocols (HTTP, HTTPS, gRPC, TLS pass-through)
-* Path-based routing to different target groups.
-* TLS termination and [certificate management](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-byoc.html).
+| Aspect | Details |
+|--------|---------|
+| **Identification** | Unique DNS name or [custom domain name](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-custom-domain-name.html) |
+| **Supported Targets** | EC2 instances, Auto-scaling groups, Lambda functions, IP-based targets (ECS and EKS clusters included) |
+| **Load Balancing** | Built-in capabilities with health checks |
+| **Listener Protocols** | HTTP, HTTPS, gRPC, TLS pass-through |
+| **TLS** | Termination and [certificate management](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-byoc.html) |
 
-### VPC resources
+---
 
-For applications that require a TCP connectivity - both listerner and target - VPC Lattice enables the consumption of [VPC resources](https://docs.aws.amazon.com/vpc-lattice/latest/ug/vpc-resources.html) from a service network. A VPC resource can be an AWS-native resource such as an [Amazon RDS](https://aws.amazon.com/rds/) database, a domain name (publicly resolvable), or an IP address. The resource can be in your VPC or on-premises network and does not need to be load-balanced. VPC resources can be associated to a service network (similar to a VPC Lattice service) and you can share them using AWS RAM to specificy the principals who can access the resource.
+### VPC Resources
 
-### Associations and endpoints
+For applications that require TCP connectivity, VPC Lattice enables the consumption of [VPC resources](https://docs.aws.amazon.com/vpc-lattice/latest/ug/vpc-resources.html) from a service network.
 
-Communication is possible in VPC Lattice by connecting both consumers and producers (VPC Lattice services or VPC resources) to a service network.
+| Resource Type | Description |
+|---------------|-------------|
+| **Identification** | Unique DNS name or [custom domain name](https://docs.aws.amazon.com/vpc-lattice/latest/ug/resource-configuration.html#custom-domain-name-resource-providers) |
+| **Supported Targets** | Native AWS resources ([Amazon RDS](https://aws.amazon.com/rds/)), domain names, IP addresses |
+| **Sharing** | Supported via AWS RAM to specify principals |
+| **Automated DNS configuration** | VPC Lattice can manage Route 53 private hosted zones (PHZs) in consumer VPCs for custom domain names; consumers control which domains are allowed via DNS preferences |
 
-VPC Lattice services can be exposed via VPC Lattice by creating a [service association](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-associations.html) to service networks. When you associate a service with a service network, the service becomes discoverable and accessible to clients within VPCs associated with that service network. 
+#### DNS Configuration
 
-Consumers located in a VPC can consume services by creating a [VPC association](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-associations) to a service network. When you associate a VPC with a service network, VPC Lattice creates the necessary networking infrastructure to enable communication. However, this VPC association will only enable connectivity via VPC Lattice to consumers in that VPC. For resources in on-premises or cross-Region environments, you should use a [service network endpoint](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-endpoint-associations) to allow these resources to connect to the service network using a routable network (hybrid or cross-Region) from external environments.
+Resource consumers have [granular control](https://docs.aws.amazon.com/vpc-lattice/latest/ug/resource-configuration.html#custom-domain-name-resource-consumers) over which domains VPC Lattice can manage PHZs for in their VPCs.
 
-### Listeners and targets
+| DNS Preference | Description |
+|----------------|-------------|
+| **VERIFIED_DOMAINS_ONLY** | (Recommended) VPC Lattice provisions private hosted zones only for verified custom domain names |
+| **ALL_DOMAINS** | VPC Lattice provisions private hosted zones for all custom domain names regardless of verification status |
+| **VERIFIED_DOMAINS_AND_SPECIFIED_DOMAINS** | VPC Lattice provisions zones for verified domains plus consumer-specified domains |
+| **SPECIFIED_DOMAINS_ONLY** | VPC Lattice provisions zones only for consumer-specified domains |
 
-VPC Lattice services use listeners and target groups to route traffic from clients to backend targets. [Listeners](https://docs.aws.amazon.com/vpc-lattice/latest/ug/listeners.html) define how your service accepts incoming requests. Protocols supported are **HTTP**, **HTTPS**, and **TLS**.
+> **Note**: When private DNS is enabled, all traffic to the custom domain from the consumer's VPC is routed through VPC Lattice. Use `VERIFIED_DOMAINS_ONLY` to maintain a strong security posture.
 
-* For HTTPS, VPC Lattice will provision and manage a TLS certificate associated with the VPC Lattice generated FQDN. For custom domain names, you can use [AWS Certificate Manager](https://aws.amazon.com/certificate-manager/) (ACM) to associate a certificate.
-* VPC Lattice supports TLS on HTTP/1.1 and HTTP/2.
-* Listener and traget don't require to have a matching protocol.
-* TLS listeners ensure that your application is the one decrypting the traffic (TLS passthrough).
+---
 
-[Target groups](https://docs.aws.amazon.com/vpc-lattice/latest/ug/target-groups.html) define where traffic is routed after it's received by a listener. Protocols supported are **HTTP**, **HTTPS**, and **TCP** (only for TLS listeners). The following targets are supported:
+### Associations and Endpoints
 
-* **EC2 instances** identified by instance ID. When associating an Autoscaling group to a VPC Lattice service, this is the target type used.
-* **IP addresses** within a VPC CIDR range. You can't register VPC endpoints or publicly routable IP addresses.
-    * You can register ECS tasks with a VPC Lattice target group, using an IP target type.
-    * You can register EKS pods as a target, using the [AWS Gateway API Controller](https://www.gateway-api-controller.eks.aws.dev/latest/), which gets the IP addresses from the Kubernetes service. 
-* **Lambda functions**.
-* **Application Load Balancers**.
+Communication in VPC Lattice is enabled by connecting both consumers and producers to a service network.
 
-### Security and observability
+#### Service Associations
 
-[Auth policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) in VPC Lattice control who can access services within a service network. These policies can be applied at both the service network and individual service levels, providing granular access control. Check the VPC Lattice documentation for more information about the [format](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html#auth-policies-resource-format) and [condition keys](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html#auth-policies-condition-keys) you can use when defining policies.
+| Aspect | Details |
+|--------|---------|
+| **Purpose** | Expose VPC Lattice services via [service association](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-associations.html) |
+| **Result** | Service becomes discoverable and accessible to clients |
 
-For observability, VPC Lattice provides comprehensive [access logging](https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html) capabilities to help you monitor and analyze traffic patterns, troubleshoot issues, and meet compliance requirements. Logs can be enabled at the service network and service level, providing the following information: 
+#### VPC Associations
 
-* Request metadata (timestamp, client IP, request path, HTTP method)
-* Response information (status code, processing time)
-* Authentication details.
-* Request and response headers.
+| Aspect | Details |
+|--------|---------|
+| **Purpose** | Enable consumers in a VPC via [VPC association](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-associations) |
+| **Infrastructure** | VPC Lattice creates necessary networking infrastructure |
+| **Scope** | Enables connectivity only for consumers in that VPC |
 
-Logs can be delivered to [Amazon S3](https://aws.amazon.com/pm/serv-s3/), [Amazon CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html), or [Amazon Data Firehose](https://aws.amazon.com/firehose/).
+#### Service Network Endpoints
+
+| Aspect | Details |
+|--------|---------|
+| **Purpose** | Allow on-premises or cross-Region resources to connect |
+| **Use Case** | [Service network endpoint](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-endpoint-associations) for routable networks (hybrid or cross-Region) |
+
+---
+
+### Listeners and Targets
+
+VPC Lattice services use listeners and target groups to route traffic from clients to backend targets.
+
+#### Listeners
+
+[Listeners](https://docs.aws.amazon.com/vpc-lattice/latest/ug/listeners.html) define how your service accepts incoming requests.
+
+| Protocol | Details |
+|----------|---------|
+| **HTTP** | Standard HTTP traffic |
+| **HTTPS** | VPC Lattice provisions and manages TLS certificate for generated FQDN; use [AWS Certificate Manager](https://aws.amazon.com/certificate-manager/) (ACM) for custom domains |
+| **TLS** | TLS passthrough - application decrypts traffic |
+
+**Additional Details:**
+- VPC Lattice supports TLS on HTTP/1.1 and HTTP/2
+- Listener and target don't require matching protocols
+
+#### Target Groups
+
+[Target groups](https://docs.aws.amazon.com/vpc-lattice/latest/ug/target-groups.html) define where traffic is routed after it's received by a listener.
+
+| Target Type | Description | Notes |
+|-------------|-------------|-------|
+| **EC2 Instances** | Identified by instance ID | Used when associating Auto Scaling groups |
+| **IP Addresses** | Within VPC CIDR range | Cannot register VPC endpoints or publicly routable IPs; supports ECS tasks and EKS pods (via [AWS Gateway API Controller](https://www.gateway-api-controller.eks.aws.dev/latest/)) |
+| **Lambda Functions** | Serverless compute | Direct integration |
+| **Application Load Balancers** | Existing ALBs | Reuse existing load balancing infrastructure |
+
+**Supported Protocols:** HTTP, HTTPS, TCP (only for TLS listeners)
+
+---
+
+### Security and Observability
+
+#### Auth Policies
+
+[Auth policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) control who can access services within a service network.
+
+| Aspect | Details |
+|--------|---------|
+| **Scope** | Service network and individual service levels |
+| **Granularity** | Fine-grained access control |
+| **Format** | [Resource-based policies](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html#auth-policies-resource-format) |
+| **Condition Keys** | [Supported condition keys](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html#auth-policies-condition-keys) for policy evaluation |
+
+#### Access Logging
+
+VPC Lattice provides comprehensive [access logging](https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html) capabilities.
+
+| Log Information | Description |
+|-----------------|-------------|
+| **Request Metadata** | Timestamp, client IP, request path, HTTP method |
+| **Response Information** | Status code, processing time |
+| **Authentication Details** | Auth-related information |
+| **Headers** | Request and response headers |
+
+**Log Destinations:** [Amazon S3](https://aws.amazon.com/pm/serv-s3/), [Amazon CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html), [Amazon Data Firehose](https://aws.amazon.com/firehose/)
+
+**Scope:** Service network and service level
+
+## Prerequisites
+
+Before using these blueprints, you should have:
+
+- **AWS Networking Knowledge**: Understanding of VPCs, subnets, security groups, and service-to-service communication patterns.
+- **Application Networking Concepts**: Familiarity with load balancing, service discovery, and application layer protocols.
+- **Infrastructure as Code**: Experience with AWS CloudFormation or Terraform.
+- **AWS Account**: An AWS account with appropriate IAM permissions to create networking resources.
+
+## Support & Feedback
+
+Amazon VPC Lattice Blueprints are maintained by AWS Solution Architects. This is not part of an AWS service and support is provided as best-effort by the VPC Lattice Blueprints community. To provide feedback, please use the [issues templates](https://github.com/aws-samples/amazon-vpc-lattice-blueprints/issues) provided. If you are interested in contributing to VPC Lattice Blueprints, see the [Contribution guide](CONTRIBUTING.md).
 
 ## FAQ
 
-Nothing for now! We will update from your feedback.
+**Q: Why do some patterns show "Coming Soon"?**
 
-## Authors
+A: We're actively developing the blueprint library. We've structured the repository to show the planned patterns while we work on completing them. See [CONTRIBUTING](./CONTRIBUTING.md) to provide feedback or request new patterns.
 
-* Pablo Sánchez Carmona, Sr. Network Specialist Solutions Architect, AWS
-* Cristóbal López, Solutions Architect, AWS
+**Q: Can I use these patterns in production?**
 
-## Contributing
+A: These patterns are **not ready** for production environments. They should be customized for your specific requirements. Update variables, CIDR blocks, and configurations before deploying to production. Always test in pre-production environments first.
+
+**Q: Do I need separate AWS accounts to use these patterns?**
+
+A: No, most patterns can be deployed in a single AWS account. However, the [Multi-AWS Account pattern](./patterns/2-multi_account/) demonstrates cross-account deployment using AWS Resource Access Manager (RAM).
+
+**Q: Which IaC tool should I use?**
+
+A: Both CloudFormation and Terraform are supported for most patterns. Choose based on your organization's preferences and existing tooling. Terraform patterns use the [AWS](https://registry.terraform.io/providers/hashicorp/aws/latest/docs) and [AWSCC](https://registry.terraform.io/providers/hashicorp/awscc/latest/docs) providers, while CloudFormation patterns use native AWS resources.
+
+**Q: What are the differences between VPC Lattice and Application Load Balancer?**
+
+A: VPC Lattice is designed for service-to-service communication across VPCs and accounts, while ALB is designed for client-to-application traffic. VPC Lattice provides built-in service discovery, cross-account sharing, and simplified connectivity without managing network infrastructure. ALB is better suited for internet-facing or VPC-internal application load balancing.
+
+## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This library is licensed under the MIT-0 License. See [LICENSE](LICENSE).

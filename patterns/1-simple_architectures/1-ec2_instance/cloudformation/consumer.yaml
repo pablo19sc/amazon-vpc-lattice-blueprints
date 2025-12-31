@@ -27,6 +27,8 @@ Resources:
     Type: AWS::EC2::VPC
     Properties: 
       CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
       Tags: 
         - Key: Name
           Value: !Join
@@ -228,3 +230,16 @@ Resources:
             - '-'
             - - !Sub consumer-eic
               - !Ref AWS::StackName
+
+Outputs:
+  ConsumerVpcId:
+    Description: Consumer VPC ID
+    Value: !Ref VPC
+  
+  ConsumerInstanceA:
+    Description: Consumer EC2 Instance ID (AZ a)
+    Value: !Ref Instancea
+  
+  ConsumerInstanceB:
+    Description: Consumer EC2 Instance ID (AZ b)
+    Value: !Ref Instanceb

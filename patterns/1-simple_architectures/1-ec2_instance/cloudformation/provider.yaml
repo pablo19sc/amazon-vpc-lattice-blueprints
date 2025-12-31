@@ -12,6 +12,9 @@ Parameters:
   ServiceNetworkId:
     Type: String
     Description: VPC Lattice service network ID.
+  ConsumerVpcId:
+    Type: String
+    Description: Consumer VPC ID - used for Private Hosted Zone association.
   HostedZoneName:
     Type: String
     Description: Private Hosted Zone name - used for DNS resolution for VPC Lattice service 2 (custom domain name)
@@ -313,12 +316,29 @@ Resources:
           UserData: 
             Fn::Base64: |
               #!/bin/bash
+              # Update system and install httpd
               sudo yum update -y
-              sudo yum install -y httpd
+              sudo yum install -y httpd php
+              
+              # Ensure httpd listens on both IPv4 and IPv6
+              # Remove any existing Listen directives and add explicit ones
+              sudo sed -i '/^Listen /d' /etc/httpd/conf/httpd.conf
+              echo "Listen 0.0.0.0:80" | sudo tee -a /etc/httpd/conf/httpd.conf
+              echo "Listen [::]:80" | sudo tee -a /etc/httpd/conf/httpd.conf
+              
               sudo systemctl start httpd
               sudo systemctl enable httpd
               sudo chown -R $USER:$USER /var/www
-              sudo echo "<h1>Hello World from $(hostname -f)</h1>" > /var/www/html/index.html
+              
+              # Create index.php to show request source IP
+              cat > /var/www/html/index.php <<'HTML'
+              <html>
+              <body>
+              <h1>Hello from EC2 instance</h1>
+              <p><strong>Request IP address:</strong> <?php echo $_SERVER['REMOTE_ADDR']; ?></p>
+              </body>
+              </html>
+              HTML
   
   # ---------- PRIVATE HOSTED ZONE ----------
   PrivateHostedZone:
@@ -326,7 +346,7 @@ Resources:
     Properties:
       Name: !Ref HostedZoneName
       VPCs: 
-        - VPCId: !Ref VPC
+        - VPCId: !Ref ConsumerVpcId
           VPCRegion: !Sub '${AWS::Region}'
   
   VpcLatticeServiceAliasARecord:

@@ -330,6 +330,103 @@ curl https://<service-domain-name>
 
 ---
 
+## 4. ECS Fargate
+
+### What gets deployed
+
+| Component | Details |
+|-----------|---------|
+| **Consumer VPC** | EC2 instances (1 per AZ) with EC2 Instance Connect endpoint for remote access |
+| **Provider VPC** | ECS Fargate cluster with containerized application |
+| **ECR Repository** | Amazon ECR repository for Docker images |
+| **Target Group** | 1 IP type target group |
+| **VPC Lattice Service** | 1 service with HTTPS listener forwarding to ECS tasks |
+| **VPC Endpoints** | ECR API, ECR DKR, S3 Gateway, and CloudWatch Logs endpoints |
+
+![ECS target](../../images/pattern1_architecture4.png)
+
+### VPC Lattice Service Configuration
+
+This pattern creates one VPC Lattice service demonstrating ECS Fargate integration:
+
+| Aspect | Configuration |
+|--------|---------------|
+| **Custom Domain Name** | ❌ No (uses VPC Lattice-generated FQDN) |
+| **Certificate** | ❌ VPC Lattice-managed |
+| **Listener** | HTTPS on port 443 |
+| **Target Group** | `ecstarget` (IP type) |
+| **Routing** | 100% traffic to ECS tasks |
+| **Targets** | ECS Fargate tasks (automatically registered) |
+| **Backend Protocol** | HTTP on port 80 |
+
+### Implementation
+
+| IaC Tool | Location |
+|----------|----------|
+| **CloudFormation** | [`./4-ecs/cloudformation/`](./4-ecs/cloudformation/) |
+| **Terraform** | [`./4-ecs/terraform/`](./4-ecs/terraform/) |
+
+### Testing Connectivity
+
+<details>
+<summary>Click to expand testing steps</summary>
+
+#### Step 1: Connect to Consumer Instance
+
+Use EC2 Instance Connect endpoint to access a consumer instance:
+
+> **Note**: Consumer EC2 instance IDs are provided as outputs when deploying the CloudFormation or Terraform code. Check the deployment outputs to get the instance IDs.
+
+```bash
+aws ec2-instance-connect ssh --instance-id <consumer-instance-id>
+```
+
+#### Step 2: Test DNS Resolution
+
+Verify VPC Lattice DNS resolution:
+
+> **Note**: The service domain name is provided as an output when deploying the CloudFormation or Terraform code. Check the deployment outputs to get the exact domain name.
+
+```bash
+dig <service-domain-name>
+```
+
+**Expected Result**: Link-local address (169.254.171.X) indicating VPC Lattice routing
+
+![Pattern4 - DNS Resolution](../../images/pattern1_architecture4_testing_dns-resolution.png)
+
+#### Step 3: Test HTTPS Connectivity
+
+Test connectivity to the ECS Fargate service through VPC Lattice:
+
+```bash
+curl https://<service-domain-name>
+```
+
+**Expected Response** (JSON format):
+```json
+{
+  "message": "Hello from ECS Fargate!!",
+  "request_ip": "169.254.171.X"
+}
+```
+
+![Pattern4 - Connectivity](../../images/pattern1_architecture4_testing_connectivity.png)
+
+#### Step 4: Verify Target Health
+
+Check that ECS tasks are healthy:
+
+1. Navigate to **VPC → VPC Lattice → Target groups**
+2. Select the `ecstarget` target group
+3. Verify ECS task IPs show **"Healthy"** status
+
+![Pattern4 - Target Health Status](../../images/pattern1_architecture4_testing_healthcheck.png)
+
+</details>
+
+---
+
 ## Troubleshooting
 
 ### Cannot connect to service

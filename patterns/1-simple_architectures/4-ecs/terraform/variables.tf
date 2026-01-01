@@ -14,8 +14,7 @@ variable "aws_region" {
   type        = string
   description = "AWS Region to use in the example."
 
-  #default = "eu-west-1"
-  default = "us-east-1"
+  default = "eu-west-1"
 }
 
 variable "vpc" {

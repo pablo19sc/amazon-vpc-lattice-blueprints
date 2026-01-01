@@ -1,0 +1,15 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Central AWS Networking services - VPC Lattice service network
+
+Resources:
+  # ---------- VPC LATTICE SERVICE NETWORK ----------
+  VpcLatticeServiceNetwork:
+    Type: AWS::VpcLattice::ServiceNetwork
+    Properties:
+      AuthType: NONE
+      Name: service-network
+
+Outputs:
+  VpcLatticeServiceNetworkId:
+    Value: !Ref VpcLatticeServiceNetwork
+    Description: VPC Lattice service network ID

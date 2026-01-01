@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Provider VPC, EC2 Instances, and VPC Lattice services
+Description: AWS Lambda function and VPC Lattice service
 Transform: 'AWS::LanguageExtensions'
 
 Parameters:

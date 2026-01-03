@@ -46,7 +46,7 @@ module "consumer_instances" {
   vpc_information = var.vpc
 }
 
-# ---------- EC2 INSTANCES ----------
+# ---------- SECURITY GROUP (VPC LATTICE ASSOCIATION) ----------
 resource "aws_security_group" "vpclattice_sg" {
   name        = "consumer_vpc-vpclattice-security-group-${var.identifier}"
   description = "VPC Lattice Security Group"

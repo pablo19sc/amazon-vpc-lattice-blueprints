@@ -3,9 +3,6 @@
 
 # --- patterns/2-multi_account/1-centralized_service_network/terraform/service-network-account/main.tf ---
 
-# AWS Account
-data "aws_caller_identity" "account" {}
-
 # AWS Organizations organization
 data "aws_organizations_organization" "org" {}
 

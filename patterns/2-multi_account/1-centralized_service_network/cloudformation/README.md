@@ -41,18 +41,10 @@ export AWS_PROFILE=service-provider
 # Deploy the service
 aws cloudformation deploy \
   --template-file service-account.yaml \
-  --stack-name vpclattice-service \
+  --stack-name vpclattice-centralized-service \
   --capabilities CAPABILITY_NAMED_IAM \
   --region eu-west-1
 ```
-
-**What gets deployed**:
-- Lambda function as service target
-- VPC Lattice service with HTTPS listener
-- Lambda target group
-- RAM resource share (shared with AWS Organization)
-
-**Save the output**: Note the `ServiceDomainName` output value - you'll need it for testing.
 
 ### Step 2: Network Account - Deploy Service Network
 
@@ -67,15 +59,10 @@ export AWS_PROFILE=network-account
 # Deploy the service network
 aws cloudformation deploy \
   --template-file service-network-account.yaml \
-  --stack-name vpclattice-service-network \
+  --stack-name vpclattice-centralized-service-network \
   --capabilities CAPABILITY_NAMED_IAM \
   --region eu-west-1
 ```
-
-**What gets deployed**:
-- VPC Lattice service network
-- Service network-to-service association (from service provider account)
-- RAM resource share (shared with AWS Organization)
 
 ### Step 3: Consumer Account - Deploy VPCs and Associations
 
@@ -90,18 +77,9 @@ export AWS_PROFILE=consumer-account
 # Deploy consumer resources
 aws cloudformation deploy \
   --template-file consumer-account.yaml \
-  --stack-name vpclattice-consumer \
+  --stack-name vpclattice-centralized-consumer \
   --region eu-west-1
 ```
-
-**What gets deployed**:
-- Consumer VPC with IPv4 and IPv6 support
-- EC2 instances (1 per AZ) for testing
-- EC2 Instance Connect endpoint for secure access
-- Security groups for instances and VPC Lattice
-- VPC Lattice VPC association to shared service network
-
-**Save the outputs**: Note the `ConsumerInstanceA` and `ConsumerInstanceB` instance IDs for testing.
 
 ## Cleanup
 
@@ -111,35 +89,25 @@ aws cloudformation deploy \
 
 ```bash
 export AWS_PROFILE=consumer-account
-aws cloudformation delete-stack --stack-name vpclattice-consumer --region eu-west-1
-aws cloudformation wait stack-delete-complete --stack-name vpclattice-consumer --region eu-west-1
+aws cloudformation delete-stack --stack-name vpclattice-centralized-consumer --region eu-west-1
+aws cloudformation wait stack-delete-complete --stack-name vpclattice-centralized-consumer --region eu-west-1
 ```
 
 ### Step 2: Network Account
 
 ```bash
 export AWS_PROFILE=network-account
-aws cloudformation delete-stack --stack-name vpclattice-service-network --region eu-west-1
-aws cloudformation wait stack-delete-complete --stack-name vpclattice-service-network --region eu-west-1
+aws cloudformation delete-stack --stack-name vpclattice-centralized-service-network --region eu-west-1
+aws cloudformation wait stack-delete-complete --stack-name vpclattice-centralized-service-network --region eu-west-1
 ```
 
 ### Step 3: Service Provider Account
 
 ```bash
 export AWS_PROFILE=service-provider
-aws cloudformation delete-stack --stack-name vpclattice-service --region eu-west-1
-aws cloudformation wait stack-delete-complete --stack-name vpclattice-service --region eu-west-1
+aws cloudformation delete-stack --stack-name vpclattice-centralized-service --region eu-west-1
+aws cloudformation wait stack-delete-complete --stack-name vpclattice-centralized-service --region eu-west-1
 ```
-
-## CloudFormation Templates
-
-For detailed information about each CloudFormation template:
-
-| Account | Template File |
-|---------|---------------|
-| **Service Provider Account** | [service-account.yaml](./service-account.yaml) |
-| **Network Account (Central)** | [service-network-account.yaml](./service-network-account.yaml) |
-| **Consumer Account** | [consumer-account.yaml](./consumer-account.yaml) |
 
 ## Next Steps
 

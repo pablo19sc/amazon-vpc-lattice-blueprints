@@ -1,7 +1,7 @@
 .PHONY: deploy deploy-repository build-push deploy-provider deploy-sn deploy-consumer undeploy clean
 
 # Default region
-REGION ?= us-east-1
+REGION ?= eu-west-1
 
 # Detect platform architecture
 PLATFORM := $(shell uname -m)

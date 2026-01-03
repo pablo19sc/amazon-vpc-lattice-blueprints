@@ -1,7 +1,5 @@
 # Amazon VPC Lattice - Centralized VPC Endpoints (AWS CloudFormation)
 
-![Centralized VPC Endpoints Architecture](../../../../images/centralized.png)
-
 ## Prerequisites
 
 - **AWS Account**: With appropriate IAM permissions

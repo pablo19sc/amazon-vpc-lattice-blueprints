@@ -1,8 +1,6 @@
 <!-- BEGIN_TF_DOCS -->
 # Amazon VPC Lattice - Centralized VPC Endpoints (Terraform)
 
-![Centralized VPC Endpoints Architecture](../../../../images/centralized.png)
-
 ## Prerequisites
 
 - **AWS Account**: With appropriate IAM permissions

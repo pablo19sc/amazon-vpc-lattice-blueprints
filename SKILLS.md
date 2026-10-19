@@ -6,7 +6,7 @@
 
 # VPC Lattice Skill
 
-> **Purpose.** This file is written for an **AI agent**, not (primarily) for a human. Drop it into your agent's context (as a system/skill file, a retrieved document, or pasted reference) so the agent can (1) reason correctly about **Amazon VPC Lattice** and (2) use the **Amazon VPC Lattice Blueprints** repository to build proof-of-concepts and architect real use cases. The human-facing overview lives in [`README.md`](./README.md); the machine-readable pattern catalog lives in [`blueprint.yaml`](./blueprint.yaml).
+> **Purpose.** This file is written for an **AI agent**, not (primarily) for a human. Drop it into your agent's context (as a system/skill file, a retrieved document, or pasted reference) so the agent can (1) reason correctly about **Amazon VPC Lattice** and (2) use the **Amazon VPC Lattice Blueprints** repository to build proof-of-concepts and architect real use cases. The human-facing overview lives in [`README.md`](./README.md); the index of every pattern lives in [`llms.txt`](./llms.txt).
 
 ## How to use this skill
 
@@ -15,11 +15,11 @@ When a user asks about service-to-service connectivity on AWS, secure cross-VPC 
 1. **Ground your mental model** in *What VPC Lattice is* and *Core building blocks* below.
 2. **Check fit** using *When to use VPC Lattice* before recommending it, in case the service is not the right tool.
 3. **Design** with *How to architect with VPC Lattice*.
-4. **Map the design to a concrete, deployable example** using *How to use this blueprint*. First read [`blueprint.yaml`](./blueprint.yaml) for the current list of patterns, then send the user to the matching `patterns/<category>/<pattern>/` directory.
+4. **Map the design to a concrete, deployable example** using *How to use this blueprint*. First read [`llms.txt`](./llms.txt) for the current list of patterns, then send the user to the matching `patterns/<category>/<pattern>/` directory.
 5. **Compose patterns when one isn't enough.** The patterns are building blocks, not mutually exclusive products. A real design often combines them — e.g. a multi-account share *plus* a centralized-VPC-endpoints layout, or an HTTP service *and* a VPC-resource (database) reached from the same consumer. Start from the closest pattern, then layer in pieces from the others rather than assuming a single directory must cover everything.
 6. **Consider authentication explicitly.** Every service-exposing pattern ships `AuthType = AWS_IAM` with an open (allow-all) policy, so it works out of the box but enforces nothing. If the user hasn't said, **ask whether they want to restrict access** — and if so, apply a restrictive policy from [`patterns/4-auth_policies/`](./patterns/4-auth_policies/) (cookbook in `policies/`, SigV4/SigV4A signing in `signing/`) on top of whichever pattern they chose. (Auth policies apply to services, not to VPC resources.)
 
-Treat [`blueprint.yaml`](./blueprint.yaml) as the **source of truth for what exists** (which patterns are published, which IaC each supports, what is deferred). Do not assume a pattern exists from this prose alone, confirm against the manifest and the `patterns/` tree.
+Treat [`llms.txt`](./llms.txt) and the `patterns/` tree as the **source of truth for what exists** (which patterns are published and which IaC each supports). Do not assume a pattern exists from this prose alone; confirm it against the index and the `patterns/` tree.
 
 ---
 
@@ -109,49 +109,12 @@ A repeatable design workflow:
 
 ## How to use this blueprint (Amazon VPC Lattice Blueprints)
 
-This repository is a library of **complete, tested, deployable** VPC Lattice patterns in **both CloudFormation and Terraform**, meant as PoC / learning / starting-point material — **not** to be consumed as-is in production.
+This repository is a library of **complete, tested, deployable** VPC Lattice patterns, meant as PoC, learning and starting-point material — **not** to be consumed as-is in production. What is about the repository rather than about VPC Lattice lives in two places:
 
-### Find the right pattern
+- **Finding a pattern:** [`llms.txt`](./llms.txt) indexes every category, pattern and reference page, with the question each answers and the IaC it ships. Map the user's goal using the sections above, then open the pattern's README.
+- **Editing, validating or deploying:** [`AGENTS.md`](./AGENTS.md) covers the repository layout, the rules a change most often breaks, the checks to run, and how to deploy and tear down a pattern safely. [`CONVENTIONS.md`](./CONVENTIONS.md) is the authoritative contract.
 
-1. Read [`blueprint.yaml`](./blueprint.yaml) — the canonical catalog of categories, sub-patterns, IaC support, and `status` (a `coming_soon` entry is deferred; absence of the field means published).
-2. Map the user's goal to a pattern using the **Core building blocks** and **How to architect** sections above, plus the **Patterns** table in [`README.md`](./README.md) and the catalog in [`blueprint.yaml`](./blueprint.yaml).
-3. Open the pattern directory under `patterns/` and follow its README.
-
-### Repository layout
-
-```
-patterns/<category>/<pattern>/
-├── terraform/         # main.tf, variables.tf, outputs.tf, providers.tf, .header.md, README.md (generated)
-└── cloudformation/    # *.yaml templates, Makefile, README.md
-```
-
-Shared Terraform modules live only in `patterns/tf_modules/`. The Terraform `README.md` is **generated** by terraform-docs from `.header.md` — never hand-edit it.
-
-The one exception to the layout is the **Auth Policies & SigV4** section (`patterns/4-auth_policies/`): it is a **reference toolkit**, not a deployable pattern, so it has no `terraform/` or `cloudformation/` directory. Instead it contains `policies/` (copy-paste auth policy snippets, one per use case) and `signing/` (how to SigV4/SigV4A-sign requests, with code examples).
-
-### Deploy and tear down
-
-- **Terraform:** set local variables / `identifier` as needed, then `terraform init` → `terraform plan` → `terraform apply`. Tear down with `terraform destroy` (multi-account patterns deploy/destroy per account, in reverse order).
-- **CloudFormation:** use the pattern's `Makefile` (`make deploy` / `make undeploy`), or the documented per-account `aws cloudformation` steps for multi-account patterns.
-- Each pattern's README has the exact deploy, **testing**, and **cleanup** steps. The typical test: connect to a consumer EC2 instance (via EC2 Instance Connect), resolve the service/resource DNS name (a VPC Lattice-managed address — `169.254.171.x` link-local for services, `129.224.0.x` for VPC resources — the overlapping-CIDR benefit in action), then `curl` the service or connect to the database.
-
-### Conventions an agent should respect when editing or extending patterns
-
-- **IaC parity:** every published deployable pattern ships **both** CloudFormation and Terraform — **except EKS, which is Terraform-only** (Helm + Kubernetes Gateway API CRDs can't be represented cleanly in pure CloudFormation). The "IaC Support" column / [`blueprint.yaml`](./blueprint.yaml) is the source of truth; never claim an implementation that doesn't exist.
-- **Naming:** `"<role>-<thing>-${var.identifier}"`, hyphens not underscores, identifier suffix last (SGs: `"<vpc>-<purpose>-security-group-${var.identifier}"`).
-- **Version pins** (uniform across patterns): module `aws-ia/vpc/aws = 4.7.3`, `aws-ia/amazon-vpc-lattice-module/aws = 1.1.0` (exact `=`); providers `hashicorp/aws >= 6.27.0`, `hashicorp/awscc >= 1.67.0` (floor `>=`); pattern-specific floors: Centralized VPC Endpoints `hashicorp/aws >= 6.50.0`, Network Segment Access `hashicorp/aws >= 6.50.0` + `hashicorp/awscc >= 1.103.0` + module `aws-ia/vpc/aws = 4.9.0`; Lambda runtime `python3.14`; Terraform core `>= 1.3.0`.
-- **License header:** MIT-0 header at the top of every IaC source file.
-- **Access logging on by default:** service network/service patterns create a CloudWatch Logs group `/aws/vpclattice/<identifier>`, destroyed on teardown (Network Segment Access logs its resource configuration the same way).
-- **DNS facts:** VPC Lattice **services** resolve to IPv4 `169.254.171.0/24` (link-local); **VPC resources** (resource gateway, e.g. RDS) are reached via the `129.224.0.0/17` range; IPv6 is `fd00:ec2:80::/64` for both. Exception: the Network Segment Access pattern reaches the provider's real IP addresses through a tunnel VPC endpoint, so its VPCs don't overlap (consumer `10.0.0.0/16`, provider `10.1.0.0/16`); with overlapping VPCs, the shared segment must avoid the consumer's addresses.
-- **Auth default:** every service-exposing pattern ships its service network and service with `AuthType = AWS_IAM` and a **completely open** (allow-all, including anonymous) auth policy, so behaviour is unchanged out of the box but the pattern is "auth-ready" — swap in a restrictive policy from `patterns/4-auth_policies/policies/` to enforce access control. The resource-only patterns (RDS / VPC Resources and Centralized VPC Endpoints) keep `NONE`, since auth policies do not apply to VPC resources (Network Segment Access has no service network or service, so no auth type applies).
-- **Secure defaults stay on:** IMDSv2 required, encrypted EBS root volumes, HTTPS listeners, RDS managed master password in Secrets Manager. Don't weaken these.
-- **Security-scan suppressions** (Checkov) require a justification (`.checkov.yaml` `skip-check` with a comment, or inline `#checkov:skip=...:reason`). Suppress only deliberate demo simplifications or confirmed false positives.
-
-See [`CONVENTIONS.md`](./CONVENTIONS.md) for the authoritative contract and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for tooling/versions.
-
-### Cost & safety reminder to surface to users
-
-Deploying any pattern provisions **real, billable** resources. VPC Lattice charges can include provisioned service or resource-configuration hours, data processing, and HTTP requests or TLS connections. Patterns can also incur EC2 instance-hours and access-logging CloudWatch Logs charges, plus Aurora for the RDS and Multi-AWS Account patterns, and the **EKS** control plane, managed nodes, and a **NAT gateway** — EKS is the most expensive. Patterns are **multi-AZ by default**. Always recommend a non-production account and running the README **Cleanup** steps when finished.
+Every pattern provisions **real, billable** resources and is **multi-AZ by default**. Always recommend a non-production account and the pattern README's **Cleanup** steps when finished.
 
 ---
 
@@ -179,4 +142,3 @@ Deploying any pattern provisions **real, billable** resources. VPC Lattice charg
 - Automated DNS configuration (Guidance): https://docs.aws.amazon.com/solutions/amazon-vpc-lattice-automated-dns-configuration-on-aws/
 - Access logs: https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html
 - AWS Gateway API Controller (EKS): https://www.gateway-api-controller.eks.aws.dev/latest/
-- This repo: [`README.md`](./README.md) · [`blueprint.yaml`](./blueprint.yaml) · [`CONVENTIONS.md`](./CONVENTIONS.md)

@@ -6,16 +6,18 @@ Please read through this document before submitting any issues or pull requests 
 
 ## Repository conventions
 
-Every published pattern follows a single set of conventions covering naming, directory layout, dependency version pins, license headers, the access-logging standard, DNS facts, and CloudFormation/Terraform parity. Before adding or modifying a pattern, read [CONVENTIONS.md](CONVENTIONS.md), it is the contract new patterns must follow. Pull requests are expected to conform to it.
+Every published pattern follows a single set of conventions covering naming, directory layout, dependency version pins, license headers, the access-logging standard, DNS facts, and CloudFormation/Terraform parity. Before adding or modifying a pattern, read [CONVENTIONS.md](CONVENTIONS.md), it is the contract new patterns must follow. Pull requests are expected to conform to it. If you work with an AI agent, point it at [AGENTS.md](AGENTS.md): it summarizes those rules, the checks to run for each kind of change, and how to deploy a pattern safely.
 
 ## Reporting Bugs/Feature Requests
 
-We welcome you to use the GitHub issue tracker to report bugs or suggest features. When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
+We welcome you to use the GitHub issue tracker to report bugs, suggest features, or report unexpected output from an AI agent using this repository. When filing an issue, please check existing open, or recently closed, issues to make sure somebody else hasn't already reported the issue. Please try to include as much information as you can. Details like these are incredibly useful:
 
 - A reproducible test case or series of steps
 - The version of our code being used
 - Any modifications you've made relevant to the bug
 - Anything unusual about your environment or deployment
+
+For an agent that recommended the wrong pattern, misstated a VPC Lattice fact, or produced IaC that doesn't work, use the [Unexpected agent output template](.github/ISSUE_TEMPLATE/unexpected_agent_output.md). Include the original prompt, the agent's complete output, and what you expected, and redact sensitive information first.
 
 ## Contributing via Pull Requests
 
@@ -31,7 +33,7 @@ To send us a pull request, please:
 2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
 3. Ensure local checks pass. Run `pre-commit run --all-files` before opening a PR so the same static checks CI runs are green locally — see [Local checks (pre-commit)](#local-checks-pre-commit) for setup and required tools.
 4. Commit to your fork using clear commit messages.
-5. Send us a pull request, answering any default questions in the pull request interface.
+5. Send us a pull request, filling in the [pull request template](.github/pull_request_template.md).
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
 GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).

@@ -71,6 +71,13 @@ patterns:
           Centralize interface VPC endpoints in a shared VPC and reach them
           from consumer VPCs through VPC Lattice VPC Resources, avoiding
           per-VPC interface endpoint duplication.
+      - name: Network Segment Access with Tunnel Endpoints
+        description: >
+          Share a whole network segment (a list of CIDR ranges) as a CIDR-type
+          resource configuration and reach it through an AWS PrivateLink tunnel
+          VPC endpoint, without a service network. Consumer hosts encapsulate
+          traffic in GENEVE and reach the provider's real IP addresses; only
+          the consumer can initiate connections.
 
   - name: Auth Policies & SigV4
     description: >
@@ -81,6 +88,7 @@ patterns:
       policy, so they are auth-ready - swap in a restrictive policy from this
       section to enforce access control. The resource-only patterns (RDS / VPC
       Resources and Centralized VPC Endpoints) keep NONE, since auth policies
-      apply to services, not to VPC resources. Auth decisions are recorded in
-      access logs.
+      apply to services, not to VPC resources; Network Segment Access has no
+      service network, so auth policies don't apply to it. Auth decisions are
+      recorded in access logs.
     iac: [Reference]

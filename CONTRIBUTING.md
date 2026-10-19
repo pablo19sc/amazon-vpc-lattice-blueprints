@@ -52,7 +52,7 @@ Pin your local tools to the versions CI uses so local results match CI. `cfn-lin
 | [Terraform](https://developer.hashicorp.com/terraform/install) | CI uses `1.9.8`; configs require `>= 1.3.0` | `terraform fmt` / `terraform validate` | Official installer, or `brew install terraform` |
 | [tflint](https://github.com/terraform-linters/tflint) | CI uses `v0.53.0` (AWS ruleset `0.31.0`, pinned in [`.tflint.hcl`](.tflint.hcl)) | Terraform lint (AWS ruleset) | `brew install tflint`, or see the [install docs](https://github.com/terraform-linters/tflint#installation) |
 | [terraform-docs](https://terraform-docs.io/user-guide/installation/) | CI uses `v0.21.0` | Generated-README drift check | `brew install terraform-docs` |
-| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | `1.51.4` | CloudFormation lint (standalone use; otherwise auto-installed by pre-commit) | `pip install "cfn-lint==1.51.4"` |
+| [cfn-lint](https://github.com/aws-cloudformation/cfn-lint) | `1.57.2` | CloudFormation lint (standalone use; otherwise auto-installed by pre-commit) | `pip install "cfn-lint==1.57.2"` |
 | [checkov](https://www.checkov.io/2.Basics/Installing%20Checkov.html) | `~3.2.x` (pre-commit pins `3.2.530`) | Static IaC security scan (standalone use; otherwise auto-installed by pre-commit) | `pip install checkov` |
 | [lychee](https://github.com/lycheeverse/lychee) | latest | Markdown link check (required by the local `lychee` hook) | `brew install lychee`, or `cargo install lychee` |
 
@@ -93,7 +93,7 @@ The local pre-commit setup and CI are intentionally two views of the **same** st
 **Maintenance expectation (checked in review):** when you change one side, you MUST make the equivalent change on the other so local and CI stay consistent. For example:
 
 - **Adding or removing a check** — add/remove the matching hook in `.pre-commit-config.yaml` *and* the matching job/step in `.github/workflows/ci.yml`.
-- **Bumping a tool version** — keep the versions aligned on both sides. That means the hook `rev:`/pinned versions in `.pre-commit-config.yaml` (e.g. `cfn-lint` `v1.51.4`, `checkov` `3.2.530`) and the corresponding pins in `.github/workflows/ci.yml` (e.g. `terraform_version`, `tflint_version`, `pip install "cfn-lint==..."`, `terraform-docs` version) **and** the version table in the [Required local tools](#required-local-tools) section above.
+- **Bumping a tool version** — keep the versions aligned on both sides. That means the hook `rev:`/pinned versions in `.pre-commit-config.yaml` (e.g. `cfn-lint` `v1.57.2`, `checkov` `3.2.530`) and the corresponding pins in `.github/workflows/ci.yml` (e.g. `terraform_version`, `tflint_version`, `pip install "cfn-lint==..."`, `terraform-docs` version) **and** the version table in the [Required local tools](#required-local-tools) section above.
 
 A pull request that changes one side without the other should be flagged in review.
 

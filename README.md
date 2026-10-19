@@ -39,6 +39,8 @@ VPC Lattice connects services across VPCs **without** VPC peering, AWS transit g
 
 To make this concrete, **every pattern in this repository intentionally uses `10.0.0.0/16` for both the consumer and the provider VPC.** The two VPCs have *identical, fully overlapping* CIDRs, and connectivity still works, because a service or resource is reached through a VPC Lattice-managed address rather than an address inside either VPC. When you run a pattern's testing steps and see a `169.254.171.x` (service) or `129.224.0.x` (VPC resource) address come back from DNS, that is the overlapping-CIDR benefit in action.
 
+The one exception is [Network Segment Access with Tunnel Endpoints](./patterns/3-advanced_architectures/2-network_segment_tunnel_endpoint/): the consumer reaches the provider's real IP addresses through a tunnel, so that pattern uses non-overlapping VPCs (`10.0.0.0/16` and `10.1.0.0/16`).
+
 ## Consumption
 
 Amazon VPC Lattice Blueprints have been designed to be consumed in the following manners:
@@ -55,7 +57,7 @@ Amazon VPC Lattice Blueprints have been designed to be consumed in the following
 |---------|-------------|-------------|
 | [1. Simple Architectures](./patterns/1-simple_architectures/) | Single-account VPC Lattice fundamentals across target types: EC2 instances, Auto Scaling groups, Lambda functions, ECS, EKS, and RDS / VPC Resources | CloudFormation, Terraform (EKS is Terraform-only) |
 | [2. Multi-AWS Account](./patterns/2-multi_account/) | Cross-account sharing of a Lambda service and an Aurora resource configuration via AWS RAM, in centralized and distributed models | CloudFormation, Terraform |
-| [3. Advanced Architectures](./patterns/3-advanced_architectures/) | Real-world architectures that go beyond the basic consumer–producer setup, composing VPC Lattice into larger designs | CloudFormation, Terraform |
+| [3. Advanced Architectures](./patterns/3-advanced_architectures/) | Real-world architectures that go beyond the basic consumer–producer setup | CloudFormation, Terraform |
 | [4. Auth Policies & SigV4](./patterns/4-auth_policies/) | Reference toolkit (not a deployable pattern) for identity-based access control: how to SigV4-sign requests and a cookbook of auth policies to apply to any pattern. Every service-exposing pattern ships `AWS_IAM` auth with an open policy, ready to lock down | Reference |
 
 ## Which pattern do I need?
@@ -95,7 +97,7 @@ These are the building blocks the patterns compose. For the full configuration o
 | [Listener](https://docs.aws.amazon.com/vpc-lattice/latest/ug/listeners.html) | How a service accepts requests: **HTTP, HTTPS, gRPC, or TLS pass-through**. HTTPS on the generated FQDN is managed for you; bring an [ACM](https://aws.amazon.com/certificate-manager/) certificate for custom domains. |
 | [Target group](https://docs.aws.amazon.com/vpc-lattice/latest/ug/target-groups.html) | Where a listener routes traffic, with health checks. Types: **INSTANCE**, **IP** (ECS tasks / EKS pods via the [AWS Gateway API Controller](https://www.gateway-api-controller.eks.aws.dev/latest/)), **LAMBDA**, and **ALB**. |
 | [VPC association](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-associations) | Connects a consumer VPC to a service network so its workloads can call the network's services (one direct association per VPC). |
-| [VPC resource](https://docs.aws.amazon.com/vpc-lattice/latest/ug/vpc-resources.html) (resource gateway + resource configuration) | Reach a native AWS resource (e.g. [Amazon RDS](https://aws.amazon.com/rds/)), a domain name, or an IP over **raw TCP** through the service network. |
+| [VPC resource](https://docs.aws.amazon.com/vpc-lattice/latest/ug/vpc-resources.html) (resource gateway + resource configuration) | Reach a native AWS resource (e.g. [Amazon RDS](https://aws.amazon.com/rds/)), a domain name, or an IP over **raw TCP** through the service network. A **CIDR** resource configuration shares a whole network segment instead, reached only through a [tunnel VPC endpoint](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-cidr-ranges.html). |
 | [Service network VPC endpoint](https://docs.aws.amazon.com/vpc-lattice/latest/ug/service-network-associations.html#service-network-vpc-endpoint-associations) | An AWS PrivateLink endpoint that reaches a service network from **outside** the VPC — over VPC peering, Transit Gateway, Direct Connect, or VPN — for hybrid and cross-Region access. |
 | [Auth policy](https://docs.aws.amazon.com/vpc-lattice/latest/ug/auth-policies.html) | IAM resource-based policy at service-network and/or service scope for identity-based access control with SigV4 request signing. |
 | [Access logging](https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html) | Per-request logs (client, path, status, auth result) to [CloudWatch Logs](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/WhatIsCloudWatchLogs.html), [Amazon S3](https://aws.amazon.com/pm/serv-s3/), or [Amazon Data Firehose](https://aws.amazon.com/firehose/). |
@@ -115,7 +117,8 @@ Costs vary by pattern, but the main drivers across the published blueprints are:
 - **Data egress / NAT**: the patterns intentionally avoid NAT gateways by using an **IPv6 egress-only internet gateway** for outbound package installs, so there is no NAT hourly/processing charge; standard data-transfer-out rates still apply. The **EKS** pattern is the exception - it provisions a **NAT gateway** (hourly + per-GB processing).
 - **Amazon RDS / Aurora** (RDS / VPC Resources **and** both Multi-AWS Account patterns): Aurora instance-hours plus storage and I/O for the cluster.
 - **Amazon EKS** (EKS pattern): the **EKS control plane** (per-hour, per-cluster), the **managed node group** EC2 instance-hours, and the **NAT gateway** noted above. This is the most expensive pattern to run.
-- **CloudWatch Logs (access logging)**: every pattern that creates a service network and/or service enables [VPC Lattice access logging](https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html) **by default** to a CloudWatch Logs log group (`/aws/vpclattice/<identifier>`). This incurs CloudWatch Logs vended-logs pricing (ingestion + storage) while deployed. The log group is created and destroyed with the pattern.
+- **AWS PrivateLink tunnel endpoint** (Network Segment Access pattern): hourly per endpoint plus per GB processed (see [AWS PrivateLink pricing](https://aws.amazon.com/privatelink/pricing/)), plus resource gateway data processing.
+- **CloudWatch Logs (access logging)**: every pattern that creates a service network and/or service enables [VPC Lattice access logging](https://docs.aws.amazon.com/vpc-lattice/latest/ug/monitoring-access-logs.html) **by default** to a CloudWatch Logs log group (`/aws/vpclattice/<identifier>`), and the Network Segment Access pattern logs its resource configuration the same way. This incurs CloudWatch Logs vended-logs pricing (ingestion + storage) while deployed. The log group is created and destroyed with the pattern.
 - **Multiple accounts**: the [Multi-AWS Account](./patterns/2-multi_account/) patterns deploy resources in two or three accounts, so the above costs apply in each account involved.
 
 ### Multi-AZ cost note

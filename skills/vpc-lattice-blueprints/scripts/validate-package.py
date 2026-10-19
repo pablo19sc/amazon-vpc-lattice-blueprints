@@ -10,8 +10,8 @@ Checks (all static, no network, no AWS credentials, stdlib only):
   2. Every relative markdown link and every `references/...` path mentioned
      in SKILL.md, README.md, and every references/*.md file resolves to an
      existing file.
-  3. assets/blueprint.yaml is byte-identical (SHA-256) to the canonical
-     repository blueprint.yaml, and the package README publishes that hash.
+  3. The bundled assets/blueprint.yaml catalog snapshot exists, and the
+     package README publishes its SHA-256.
   4. evals/evals.json parses; case IDs are unique, trigger cases carry an
      allowed `expect` value and non-empty prompts, and task cases carry
      non-empty assertion lists.
@@ -29,7 +29,6 @@ import sys
 from pathlib import Path
 
 PKG_DIR = Path(__file__).resolve().parent.parent          # skills/vpc-lattice-blueprints
-REPO_ROOT = PKG_DIR.parent.parent                         # repository root
 ALLOWED_EXPECT = {"activate", "no_activation", "activate_and_clarify"}
 
 errors: list[str] = []
@@ -126,24 +125,12 @@ def check_relative_paths() -> None:
 
 
 def check_snapshot_sync() -> None:
-    canonical = REPO_ROOT / "blueprint.yaml"
     snapshot = PKG_DIR / "assets" / "blueprint.yaml"
     readme = PKG_DIR / "README.md"
-    if not canonical.is_file():
-        err("canonical blueprint.yaml not found at the repository root")
-        return
     if not snapshot.is_file():
         err("assets/blueprint.yaml snapshot is missing")
         return
-    h_canonical = hashlib.sha256(canonical.read_bytes()).hexdigest()
     h_snapshot = hashlib.sha256(snapshot.read_bytes()).hexdigest()
-    if h_canonical != h_snapshot:
-        err(
-            "assets/blueprint.yaml has drifted from the canonical blueprint.yaml "
-            f"(canonical {h_canonical[:12]}..., snapshot {h_snapshot[:12]}...). "
-            "Regenerate it: cp blueprint.yaml skills/vpc-lattice-blueprints/assets/blueprint.yaml "
-            "and update the provenance table in the package README."
-        )
     if not readme.is_file():
         err("README.md is missing; cannot validate snapshot provenance")
         return

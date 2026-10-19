@@ -64,7 +64,7 @@ Amazon VPC Lattice Blueprints have been designed to be consumed in the following
 
 Browse the [Patterns](#patterns) table above to see what's available: patterns 1-3 are complete, deployable examples with testing and cleanup steps, and pattern 4 is a reference toolkit you apply on top of any of them.
 
-To match your **specific** use case to the right pattern, the fastest path is to ask your preferred AI agent and model: install the [agent skill](./skills/vpc-lattice-blueprints/) (or give it [`SKILLS.md`](./SKILLS.md) and [`blueprint.yaml`](./blueprint.yaml) as pasted context — see the tip at the top of this README) and describe your scenario. With that context the agent can reason about VPC Lattice, recommend the pattern that fits, and explain how to compose or secure it. In a repository checkout the skill reads the canonical catalog directly; a standalone installation uses the versioned catalog snapshot documented in the [package README](./skills/vpc-lattice-blueprints/README.md).
+To match your **specific** use case to the right pattern, the fastest path is to ask your preferred AI agent and model: install the [agent skill](./skills/vpc-lattice-blueprints/) (or give it [`SKILLS.md`](./SKILLS.md) as pasted context — see the tip at the top of this README) and describe your scenario. With that context the agent can reason about VPC Lattice, recommend the pattern that fits, and explain how to compose or secure it. An agent reading this repository remotely can start from [`llms.txt`](./llms.txt), the index of every pattern; an agent working in a local clone can start from [`AGENTS.md`](./AGENTS.md).
 
 ## Infrastructure as Code Considerations
 

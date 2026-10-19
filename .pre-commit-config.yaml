@@ -69,16 +69,15 @@ repos:
           - "--accept"
           - "200,206,429"
 
-  # Skill package: frontmatter, paths, blueprint.yaml snapshot sync, evals.
-  # Also triggers on the root blueprint.yaml so a stale snapshot fails here.
+  # Skill package: frontmatter, paths, snapshot provenance, evals.
   - repo: local
     hooks:
       - id: skill-package-validate
         name: Agent skill package validation
-        description: Validate the vpc-lattice-blueprints skill package (frontmatter, paths, snapshot sync, evals structure). Mirrors CI.
+        description: Validate the vpc-lattice-blueprints skill package (frontmatter, paths, snapshot provenance, evals structure). Mirrors CI.
         entry: python3 skills/vpc-lattice-blueprints/scripts/validate-package.py
         language: system
-        files: ^(skills/vpc-lattice-blueprints/|blueprint\.yaml$)
+        files: ^skills/vpc-lattice-blueprints/
         pass_filenames: false
 
   # General hygiene.

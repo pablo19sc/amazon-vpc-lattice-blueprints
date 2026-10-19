@@ -5,7 +5,7 @@
 
 This document is the contract that **every published pattern** in this repository follows. New patterns and changes to existing patterns must conform to it. It is the authoritative, concise reference for naming, layout, dependency versions, license headers, access logging, DNS facts, and CloudFormation/Terraform parity.
 
-> If you are adding or modifying a pattern, read this file first. CI and the local pre-commit hooks enforce much of it automatically.
+> If you are adding or modifying a pattern, read this file first. CI and the local pre-commit hooks enforce much of it automatically. AI agents working in a local clone start from [`AGENTS.md`](AGENTS.md), which summarizes these rules and the checks to run.
 
 ---
 
@@ -143,7 +143,7 @@ Exception: in Network Segment Access with Tunnel Endpoints, the consumer reaches
 
 All published **deployable** patterns ship **both** a CloudFormation and a Terraform implementation, each meeting the completeness bar — **except EKS, which is Terraform-only**. EKS is Terraform-only because the AWS Gateway API Controller is installed via Helm and configured through Kubernetes CRDs, which a pure-CloudFormation implementation cannot represent cleanly. The pattern table notes this, and the EKS README includes a short "Why Terraform-only?" explanation.
 
-The **Auth Policies & SigV4** section is the one part of the repository that is **not** a deployable pattern: it is a reference toolkit (auth policy snippets + signing guidance) applied on top of any other pattern, so the parity policy does not apply to it. Its `blueprint.yaml` entry is marked `iac: [Reference]`.
+The **Auth Policies & SigV4** section is the one part of the repository that is **not** a deployable pattern: it is a reference toolkit (auth policy snippets + signing guidance) applied on top of any other pattern, so the parity policy does not apply to it. It is listed with `Reference` as its IaC support in the README pattern table and in `llms.txt`.
 
 ---
 
@@ -168,8 +168,12 @@ Rules of thumb:
 
 ---
 
-## 9. Keeping SKILLS.md in sync
+## 9. Catalog and agent-index synchronization
 
-[`SKILLS.md`](SKILLS.md) at the repo root is an **agent-facing skill file**; it teaches an AI agent what VPC Lattice is and how to use this blueprint. To stay portable (so it can be lifted into another agent's context), it **intentionally restates** a handful of facts that are authoritative here, including the **version pins** (section 3), the **DNS ranges** (section 6), the **parity policy** (section 7), and the **secure-default** expectations (section 8).
+Several files describe the same set of patterns, for humans and for agents. Keep them in step **in the same change**:
 
-Because those facts are duplicated, **when you change any of them in this file you MUST update the matching value in `SKILLS.md`.** This file (`CONVENTIONS.md`) and [`blueprint.yaml`](blueprint.yaml) remain the sources of truth; `SKILLS.md` is a derived summary that must not drift from them.
+- When a pattern is added, removed, or renamed, update the [Patterns table in `README.md`](README.md#patterns), the category README (`patterns/<category>/README.md`), [`llms.txt`](llms.txt), and the agent skill package's `references/pattern-selection.md` under [`skills/vpc-lattice-blueprints/`](skills/vpc-lattice-blueprints/). A pattern missing from `llms.txt` is a bug.
+- [`SKILLS.md`](SKILLS.md) is an **agent-facing skill file** that teaches VPC Lattice itself. It restates a few facts that are authoritative here — the **DNS ranges** (section 6) and the **EKS parity exception** (section 7). When you change one of them in this file, update `SKILLS.md` too.
+- [`AGENTS.md`](AGENTS.md) is the guide for an agent working in a local clone: it summarizes the rules above and the validation steps, and links here rather than restating values. When a convention or a validation step changes, update `AGENTS.md`.
+
+**File paths are a public interface.** `llms.txt`, the `README.md` anchors `#why-vpc-lattice` and `#key-concepts`, and the category and pattern READMEs are linked by path from outside this repository, including the Amazon VPC Lattice agent skill. Do not rename or move them, or rename those headings, without calling it out in the pull request.

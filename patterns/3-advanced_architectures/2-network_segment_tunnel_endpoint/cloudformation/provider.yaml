@@ -1,0 +1,259 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provider VPC, network segment hosts, VPC Lattice resource gateway (IN_VPC) and CIDR-type resource configuration
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+  SegmentPort:
+    Type: Number
+    Description: TCP port the segment hosts listen on (and the only port the resource configuration accepts).
+    Default: 80
+
+# Subnet indexes in the 10.1.0.0/16 VPC (/24 each)
+Mappings:
+  SubnetToIndex:
+    RGWa:
+      Index: 0
+    RGWb:
+      Index: 1
+    Workloada:
+      Index: 2
+    Workloadb:
+      Index: 3
+
+Resources:
+  # ---------- VPC ----------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.1.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - provider-vpc
+              - !Ref AWS::StackName
+
+  # For::Each iteration: per subnet type (Workload, RGW) and AZ (2 AZs)
+  # Resources to create: 4 subnets, 4 route tables, 4 route table associations - obtaining AZ affinity
+  'Fn::ForEach::SubnetTypes':
+    - SubnetType
+    - [Workload, RGW]
+    - '${SubnetType}':
+      'Fn::ForEach::AZ':
+        - AvailabilityZone
+        - [a, b]
+          # Subnets
+        - '${SubnetType}Subnet${AvailabilityZone}':
+            Type: AWS::EC2::Subnet
+            Properties:
+              VpcId: !Ref VPC
+              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+              CidrBlock: !Select
+                - !FindInMap [SubnetToIndex, !Sub "${SubnetType}${AvailabilityZone}", Index]
+                - !Cidr
+                  - !GetAtt VPC.CidrBlock
+                  - 256
+                  - 8
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub provider-subnet-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Tables
+          '${SubnetType}RouteTable${AvailabilityZone}':
+            Type: AWS::EC2::RouteTable
+            Properties:
+              VpcId: !Ref VPC
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub provider-rt-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Table associations
+          '${SubnetType}RouteTableAssociation${AvailabilityZone}':
+            Type: AWS::EC2::SubnetRouteTableAssociation
+            Properties:
+              RouteTableId: !Ref
+                'Fn::Sub': '${SubnetType}RouteTable${AvailabilityZone}'
+              SubnetId: !Ref
+                'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}'
+
+  # ---------- SECURITY GROUPS ----------
+  # Security Group (Resource Gateway) - controls traffic from the gateway to the segment
+  ResourceGatewaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Resource Gateway Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub provider-vpc-resource-gateway-security-group-${AWS::StackName}
+
+  # Egress to each workload subnet of the segment
+  ResourceGatewaySecurityGroupEgressSegmenta:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ResourceGatewaySecurityGroup
+      Description: Allowing egress to the network segment (AZ a)
+      IpProtocol: tcp
+      FromPort: !Ref SegmentPort
+      ToPort: !Ref SegmentPort
+      CidrIp: !GetAtt WorkloadSubneta.CidrBlock
+
+  ResourceGatewaySecurityGroupEgressSegmentb:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref ResourceGatewaySecurityGroup
+      Description: Allowing egress to the network segment (AZ b)
+      IpProtocol: tcp
+      FromPort: !Ref SegmentPort
+      ToPort: !Ref SegmentPort
+      CidrIp: !GetAtt WorkloadSubnetb.CidrBlock
+
+  # Security Group (segment hosts) - traffic arrives from the resource gateway ENIs
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Network segment hosts Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub provider-vpc-instance-security-group-${AWS::StackName}
+
+  InstanceSecurityGroupIngressResourceGateway:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing ingress from the resource gateway
+      IpProtocol: tcp
+      FromPort: !Ref SegmentPort
+      ToPort: !Ref SegmentPort
+      SourceSecurityGroupId: !Ref ResourceGatewaySecurityGroup
+
+  # ---------- SEGMENT HOSTS ----------
+  # For::Each iteration: per AZ (2 AZs) - one web server per workload subnet
+  'Fn::ForEach::Instances':
+    - AvailabilityZone
+    - [a, b]
+    - 'SegmentHost${AvailabilityZone}':
+        Type: AWS::EC2::Instance
+        Properties:
+          InstanceType: t3.micro
+          SecurityGroupIds:
+            - !Ref InstanceSecurityGroup
+          SubnetId: !Ref
+            'Fn::Sub': 'WorkloadSubnet${AvailabilityZone}'
+          ImageId: !Ref LatestAmiId
+          MetadataOptions:
+            HttpEndpoint: enabled
+            HttpTokens: required
+          BlockDeviceMappings:
+            - DeviceName: /dev/xvda
+              Ebs:
+                Encrypted: true
+          UserData:
+            Fn::Base64: !Sub |
+              #!/bin/bash
+              # Minimal web server inside the shared network segment that answers with
+              # its own IP address and AZ, so the consumer can see which host it reached.
+              set -euo pipefail
+              TOKEN=$(curl -sS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+              IP=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+              AZ=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+              mkdir -p /var/www
+              echo "Hello from $IP ($AZ), reached through the shared network segment" > /var/www/index.html
+              cat > /etc/systemd/system/segment-web.service <<'EOF'
+              [Unit]
+              Description=Demo web server inside the shared network segment
+              After=network-online.target
+
+              [Service]
+              ExecStart=/usr/bin/python3 -m http.server ${SegmentPort} --directory /var/www
+              Restart=always
+
+              [Install]
+              WantedBy=multi-user.target
+              EOF
+              systemctl daemon-reload
+              systemctl enable --now segment-web.service
+          Tags:
+            - Key: Name
+              Value: !Join
+                - '-'
+                - - !Sub provider-segment-host-${AvailabilityZone}
+                  - !Ref AWS::StackName
+
+  # ---------- VPC LATTICE RESOURCE GATEWAY ----------
+  # DNS resolution must be IN_VPC to attach a CIDR resource configuration
+  ResourceGateway:
+    Type: AWS::VpcLattice::ResourceGateway
+    Properties:
+      Name: resource-gateway-network-segment
+      IpAddressType: IPV4
+      ResourceConfigDnsResolution: IN_VPC
+      SecurityGroupIds:
+        - !Ref ResourceGatewaySecurityGroup
+      SubnetIds:
+        - !Ref RGWSubneta
+        - !Ref RGWSubnetb
+      VpcIdentifier: !Ref VPC
+
+  # ---------- VPC LATTICE RESOURCE CONFIGURATION (CIDR) ----------
+  ResourceConfiguration:
+    Type: AWS::VpcLattice::ResourceConfiguration
+    Properties:
+      Name: resource-config-network-segment
+      ResourceConfigurationType: CIDR
+      ResourceGatewayId: !Ref ResourceGateway
+      PortRanges:
+        - !Ref SegmentPort
+      ResourceConfigurationDefinition:
+        CidrResource:
+          CidrRanges:
+            - !GetAtt WorkloadSubneta.CidrBlock
+            - !GetAtt WorkloadSubnetb.CidrBlock
+
+  # ---------- VPC LATTICE ACCESS LOGGING ----------
+  AccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/vpclattice/${AWS::StackName}
+      RetentionInDays: 7
+
+  # Access log subscription (resource configuration scope)
+  AccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt ResourceConfiguration.Arn
+      DestinationArn: !GetAtt AccessLogGroup.Arn
+
+Outputs:
+  ResourceConfigurationArn:
+    Description: VPC Lattice resource configuration ARN (CIDR type) - consumed by the tunnel VPC endpoint.
+    Value: !GetAtt ResourceConfiguration.Arn
+
+  NetworkSegmentCidrs:
+    Description: CIDR ranges shared through the resource configuration.
+    Value: !Join
+      - ','
+      - - !GetAtt WorkloadSubneta.CidrBlock
+        - !GetAtt WorkloadSubnetb.CidrBlock
+
+  SegmentHostA:
+    Description: Private IPv4 address of the segment host in AZ a.
+    Value: !GetAtt SegmentHosta.PrivateIp
+
+  SegmentHostB:
+    Description: Private IPv4 address of the segment host in AZ b.
+    Value: !GetAtt SegmentHostb.PrivateIp

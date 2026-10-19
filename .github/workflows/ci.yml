@@ -1,31 +1,12 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 #
-# Static-only CI for Amazon VPC Lattice Blueprints.
+# Static-only CI (no AWS credentials). Keep checks and pinned versions in
+# lockstep with .pre-commit-config.yaml, see CONTRIBUTING.md.
 #
-# CI <-> pre-commit lockstep: the checks, tools, and pinned versions in this
-# workflow must stay in step with .pre-commit-config.yaml. A change to one
-# (adding/removing a check, bumping a tool version) MUST be mirrored in the other
-# so local and CI stay consistent (see CONTRIBUTING.md "Keeping CI and
-# pre-commit in lockstep").
-#
-# Pipeline shape:
-#   * discover          - AUTOMATICALLY enumerates pattern directories so new
-#                         patterns are picked up without editing this file.
-#   * fmt               - repo-wide `terraform fmt -check -recursive`.
-#   * terraform-checks  - per-pattern `terraform init -backend=false` + `validate`.
-#   * tflint            - per-pattern `tflint` with the AWS ruleset (.tflint.hcl).
-#   * cfn-lint          - per-template `cfn-lint` (handles AWS::LanguageExtensions).
-#   * terraform-docs    - generated-README drift check for dirs with a `.header.md`.
-#   * markdown-links    - repository markdown link check (lychee).
-#   * checkov           - IaC security scan over patterns/, using `.checkov.yaml`
-#                         (the committed, tunable baseline).
-#   * skill-package     - agent skill frontmatter, path, manifest snapshot, and
-#                         evaluation-corpus validation.
-#
-# Action versions are pinned to specific majors. Explicit failure annotations
-# (GitHub `::error` workflow commands naming the pattern path + check) mean a
-# maintainer immediately sees which pattern and which check failed.
+# Jobs: discover (finds patterns, no edits needed for new ones), fmt,
+# terraform-checks, tflint, cfn-lint, terraform-docs, markdown-links, checkov,
+# skill-package, and ci-passed (the single required check).
 
 name: CI
 
@@ -43,25 +24,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # discover: enumerate pattern directories automatically.
-  #
-  # Two matrices are emitted as JSON job outputs via $GITHUB_OUTPUT:
-  #   * terraform_dirs  - per-pattern Terraform roots (dirs containing *.tf),
-  #                       excluding .terraform/ caches and the shared
-  #                       patterns/tf_modules/* modules (which have no provider
-  #                       configuration of their own and are validated
-  #                       transitively when a pattern that uses them is
-  #                       validated).
-  #   * cfn_files       - CloudFormation template files under
-  #                       patterns/**/cloudformation/ (*.yaml and *.yml).
-  #
-  # Downstream check jobs consume these with:
-  #   needs: discover
-  #   strategy:
-  #     matrix:
-  #       dir: ${{ fromJSON(needs.discover.outputs.terraform_dirs) }}
-  # ---------------------------------------------------------------------------
+  # Emits the matrices used by the per-pattern jobs: Terraform roots
+  # (excluding tf_modules, validated through the patterns that use them) and
+  # CloudFormation templates.
   discover:
     name: Discover pattern directories
     runs-on: ubuntu-latest
@@ -78,8 +43,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Terraform roots: any directory containing at least one *.tf file,
-          # excluding Terraform provider caches and the shared tf_modules.
+          # Directories with at least one *.tf file.
           terraform_dirs="$(
             find patterns -type f -name '*.tf' \
               -not -path '*/.terraform/*' \
@@ -89,7 +53,7 @@ jobs:
             | jq -R -s -c 'split("\n") | map(select(length > 0))'
           )"
 
-          # CloudFormation templates: *.yaml / *.yml under any cloudformation/ dir.
+          # *.yaml / *.yml under any cloudformation/ directory.
           cfn_files="$(
             find patterns -type f \( -name '*.yaml' -o -name '*.yml' \) \
               -path '*/cloudformation/*' \
@@ -108,9 +72,7 @@ jobs:
             echo "cfn_files=${cfn_files}"
           } >> "$GITHUB_OUTPUT"
 
-  # ===========================================================================
-  # fmt: repo-wide Terraform formatting check (runs once over the whole repo).
-  # ===========================================================================
+  # Repo-wide `terraform fmt -check`.
   fmt:
     name: "Terraform fmt (repo-wide)"
     runs-on: ubuntu-latest
@@ -127,19 +89,13 @@ jobs:
       - name: terraform fmt -check -recursive
         shell: bash
         run: |
-          # `set +e` disables the runner's default errexit so we can capture the
-          # exit code and emit a clear annotation before failing the step.
+          # Capture the exit code so each offending file can be annotated.
           set +e
-          # Fails (and lists the offending files) if any *.tf is not canonically
-          # formatted. A clean checkout has no .terraform/ caches, so -recursive
-          # only sees committed sources.
           echo "::group::terraform fmt -check -recursive -diff"
           terraform fmt -check -recursive -diff -no-color
           status=$?
           echo "::endgroup::"
           if [ "${status}" -ne 0 ]; then
-            # Re-run in list-only mode to annotate each offending file inline so a
-            # maintainer can see exactly which files need `terraform fmt`.
             while IFS= read -r f; do
               [ -n "${f}" ] || continue
               echo "::error file=${f},title=terraform fmt::[terraform fmt] ${f} is not canonically formatted. Run: terraform fmt ${f}"
@@ -148,12 +104,8 @@ jobs:
             exit 1
           fi
 
-  # ===========================================================================
-  # terraform-checks: per-pattern init (no backend, no creds) + validate.
-  #
-  # The EKS pattern pulls helm/kubernetes/kubectl providers; `init -backend=false`
-  # + `validate` works for those statically without a cluster.
-  # ===========================================================================
+  # Per-pattern `init -backend=false` + `validate` (no state, no credentials;
+  # also works for the EKS pattern's providers without a cluster).
   terraform-checks:
     name: "Terraform validate: ${{ matrix.dir }}"
     needs: discover
@@ -200,9 +152,7 @@ jobs:
             exit "${status}"
           fi
 
-  # ===========================================================================
-  # tflint: per-pattern lint with the AWS ruleset declared in .tflint.hcl.
-  # ===========================================================================
+  # Per-pattern tflint with the AWS ruleset in .tflint.hcl.
   tflint:
     name: "tflint: ${{ matrix.dir }}"
     needs: discover
@@ -223,7 +173,7 @@ jobs:
       - name: tflint --init (install AWS ruleset)
         shell: bash
         env:
-          # Avoid GitHub API rate limits when downloading the ruleset plugin.
+          # Avoids GitHub API rate limits when downloading the ruleset.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: tflint --init --config "${GITHUB_WORKSPACE}/.tflint.hcl"
 
@@ -243,17 +193,9 @@ jobs:
             exit "${status}"
           fi
 
-  # ===========================================================================
-  # cfn-lint: per-template CloudFormation lint.
-  #
-  # cfn-lint v1.x natively understands the AWS::LanguageExtensions transform used
-  # by the RDS / VPC Resources templates. Pinned to 1.51.4 (kept in lockstep with
-  # .pre-commit-config.yaml): the v1.51.4 spec recognizes the GA `python3.14`
-  # Lambda runtime (the repo-wide pin), the newer EC2 /
-  # VPC-endpoint properties these templates use, and the VPC Lattice resource
-  # gateway `ResourceConfigDnsResolution` property (centralized VPC endpoints
-  # pattern), which older specs flagged as stale-spec false positives.
-  # ===========================================================================
+  # Per-template cfn-lint (handles AWS::LanguageExtensions). Same pin as
+  # pre-commit; older specs reject newer properties these templates use (e.g.
+  # the CIDR resource configuration and Tunnel VPC endpoint types).
   cfn-lint:
     name: "cfn-lint: ${{ matrix.file }}"
     needs: discover
@@ -273,7 +215,7 @@ jobs:
 
       - name: Install cfn-lint
         shell: bash
-        run: pip install "cfn-lint==1.51.4"
+        run: pip install "cfn-lint==1.57.2"
 
       - name: cfn-lint ${{ matrix.file }}
         shell: bash
@@ -288,14 +230,7 @@ jobs:
             exit "${status}"
           fi
 
-  # ===========================================================================
-  # terraform-docs: fail if any generated README.md is stale.
-  #
-  # Only directories that follow the generated-README convention (they contain a
-  # `.header.md`) are checked, using the shared .config/.terraform-docs.yaml.
-  # `--output-check` compares the would-be output against the committed README
-  # without writing anything.
-  # ===========================================================================
+  # Fails if a generated README (any dir with a .header.md) is stale.
   terraform-docs:
     name: terraform-docs drift check
     runs-on: ubuntu-latest
@@ -332,12 +267,7 @@ jobs:
           done < <(find patterns -type f -name '.header.md' -not -path '*/.terraform/*' | sort)
           exit "${fail}"
 
-  # ===========================================================================
-  # markdown-links: check links across repository markdown with lychee.
-  #
-  # Kept lenient on transient/rate-limited responses (429) so external flakiness
-  # does not block PRs; broken internal links still fail. Static only.
-  # ===========================================================================
+  # Markdown link check; 206/429 accepted so external flakiness doesn't block PRs.
   markdown-links:
     name: Markdown link check
     runs-on: ubuntu-latest
@@ -356,16 +286,11 @@ jobs:
             './**/*.md'
           fail: true
         env:
-          # Use the workflow token to raise GitHub link-check rate limits.
+          # Raises GitHub link-check rate limits.
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ===========================================================================
-  # checkov: static IaC security scan over the patterns.
-  #
-  # References the committed `.checkov.yaml` baseline (the single source of truth
-  # for what is suppressed and why). `soft_fail` keeps findings non-blocking for
-  # now; flip it to a blocking gate once the baseline is fully triaged.
-  # ===========================================================================
+  # IaC security scan driven by the .checkov.yaml baseline. Non-blocking
+  # (soft_fail) until the baseline is fully triaged.
   checkov:
     name: Checkov security scan
     runs-on: ubuntu-latest
@@ -379,23 +304,11 @@ jobs:
           directory: patterns
           config_file: .checkov.yaml
           soft_fail: true
-          # `output_format: cli` + `quiet: true` keeps the human-readable CLI
-          # report and suppresses only the PASSED checks. FAILED checks are still
-          # printed in full, including the offending file path and the Checkov
-          # check ID (e.g. `CKV_AWS_*`), so a maintainer can see exactly which
-          # pattern file and which check failed. When this is hardened from
-          # `soft_fail` to a blocking gate, that same per-file
-          # + per-check output is what surfaces in the job log.
+          # Hides PASSED checks; FAILED ones still show file and check ID.
           output_format: cli
           quiet: true
 
-  # ===========================================================================
-  # skill-package: static validation of the agent skill package under
-  # skills/vpc-lattice-blueprints/ (SKILL.md frontmatter rules, referenced-path
-  # existence, assets/blueprint.yaml snapshot sync with the canonical root
-  # blueprint.yaml, evals.json structure). Stdlib-only Python, no credentials.
-  # Mirrors the `skill-package-validate` pre-commit hook (lockstep rule above).
-  # ===========================================================================
+  # Skill package: frontmatter, paths, blueprint.yaml snapshot sync, evals.
   skill-package:
     name: Agent skill package validation
     runs-on: ubuntu-latest
@@ -407,22 +320,11 @@ jobs:
         shell: bash
         run: python3 skills/vpc-lattice-blueprints/scripts/validate-package.py
 
-  # ===========================================================================
-  # ci-passed: single aggregator gate.
-  #
-  # This job depends on every other job and succeeds only if none of them
-  # failed/were cancelled. Use the configure only this check ("CI passed")
-  # in the branch protection.
-  #
-  # Maintenance: if you add a new TOP-LEVEL job to this workflow, add it to the
-  # `needs` list below so it is included in the gate.
-  # ===========================================================================
+  # Single gate for branch protection. Add every new top-level job to `needs`.
   ci-passed:
     name: CI passed
     runs-on: ubuntu-latest
-    # Run even when an upstream job fails so we can evaluate results explicitly
-    # (without `always()`, this job would be skipped on failure, which produces
-    # a confusing "skipped required check" state in the ruleset).
+    # always(): evaluate results instead of being skipped when a job fails.
     if: always()
     needs:
       - discover

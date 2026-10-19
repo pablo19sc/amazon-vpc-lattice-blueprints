@@ -1,0 +1,30 @@
+#!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Provider instance: a minimal web server inside the shared network segment that
+# answers with its own IP address and AZ, so the consumer can see which host it reached.
+set -euo pipefail
+
+TOKEN=$(curl -sS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+IP=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+AZ=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+mkdir -p /var/www
+echo "Hello from $IP ($AZ), reached through the shared network segment" > /var/www/index.html
+
+cat > /etc/systemd/system/segment-web.service <<'EOF'
+[Unit]
+Description=Demo web server inside the shared network segment
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -m http.server ${port} --directory /var/www
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now segment-web.service

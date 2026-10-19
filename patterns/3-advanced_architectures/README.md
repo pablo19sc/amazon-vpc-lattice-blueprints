@@ -17,7 +17,8 @@ This section demonstrates advanced Amazon VPC Lattice patterns that go beyond st
 | Pattern | Description | IaC Support |
 |---------|-------------|-------------|
 | [1. Centralized VPC Endpoints](./1-centralized_vpc_endpoints/) | Centralize interface VPC endpoints in a shared VPC and reach them from consumer VPCs through VPC Lattice VPC Resources | CloudFormation, Terraform |
+| [2. Network Segment Access with Tunnel Endpoints](./2-network_segment_tunnel_endpoint/) | Share a whole network segment (CIDR ranges) as a CIDR-type resource configuration and reach it through a Tunnel VPC endpoint, with GENEVE on the consumer | CloudFormation, Terraform |
 
 ## Next Steps
 
-After exploring these advanced architectures, check the [Auth Policies & SigV4 toolkit](../4-auth_policies/) for adding identity-based access control (SigV4 + restrictive auth policies) to any pattern.
+After exploring these advanced architectures, check the [Auth Policies & SigV4 toolkit](../4-auth_policies/) for adding identity-based access control (SigV4 + restrictive auth policies) to any pattern (using VPC Lattice services).

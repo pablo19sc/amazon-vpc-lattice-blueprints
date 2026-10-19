@@ -60,7 +60,7 @@ Seven constructs compose almost every design:
 |------|-------|
 | Service DNS resolves to | IPv4 `169.254.171.0/24` (link-local), IPv6 `fd00:ec2:80::/64` |
 | VPC resource access uses | IPv4 `129.224.0.0/17`, IPv6 `fd00:ec2:80::/64` |
-| Consumer & provider VPC CIDR in every pattern | `10.0.0.0/16` (fully overlapping, on purpose) |
+| Consumer & provider VPC CIDR in every pattern | `10.0.0.0/16` (fully overlapping, on purpose); Network Segment Access uses `10.0.0.0/16` + `10.1.0.0/16` |
 | Listener protocols | HTTP, HTTPS, TLS pass-through (gRPC via an HTTPS listener + gRPC target-group protocol version) |
 | Target types | INSTANCE, IP (ECS/EKS), LAMBDA, ALB |
 | TCP/database backends | resource gateway + resource configuration (VPC resources) |

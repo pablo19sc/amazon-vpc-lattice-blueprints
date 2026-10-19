@@ -33,6 +33,7 @@ Selection heuristics by request shape:
 - **Single account, first Lattice architecture, specific compute type** → *Simple Architectures*; pick the sub-pattern matching the compute (EC2, ASG, Lambda, ECS, EKS) or *RDS / VPC Resources* for a database over raw TCP.
 - **Multiple AWS accounts** → *Multi-AWS Account*: **Centralized Service Network** when one networking account owns the service network; **Distributed** when each consumer account owns its own network and associates shared services/resources.
 - **Many VPCs each duplicating interface endpoints** → *Advanced Architectures / Centralized VPC Endpoints*.
+- **Reach a whole range of addresses (a subnet or network segment) in another VPC or account**, especially when the hosts are ephemeral or not known in advance → *Advanced Architectures / Network Segment Access with Tunnel Endpoints*. Confirm the consumer can run GENEVE on its hosts, only needs TCP, and never needs the provider side to initiate connections; otherwise share named resources through a service network instead.
 - **Restricting who can call a service** → overlay *Auth Policies & SigV4* (`patterns/4-auth_policies/`) on whichever pattern was chosen; it is a reference toolkit, not a deployable pattern.
 
 ## Composing patterns

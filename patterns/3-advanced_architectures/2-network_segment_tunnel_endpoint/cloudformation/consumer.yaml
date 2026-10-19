@@ -1,0 +1,429 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: Consumer VPC, tunnel VPC endpoint to the shared network segment, and EC2 instances (GENEVE device, EC2 Instance Connect)
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  ResourceConfigurationArn:
+    Type: String
+    Description: ARN of the CIDR-type VPC Lattice resource configuration (network segment).
+  SegmentCidrs:
+    Type: CommaDelimitedList
+    Description: CIDR ranges of the shared network segment (routed through the tunnel on the consumer instances).
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
+# Subnet indexes in the 10.0.0.0/16 VPC
+Mappings:
+  SubnetToIndex:
+    Endpointsa:
+      Index: 0
+    Endpointsb:
+      Index: 1
+    Workloada:
+      Index: 2
+    Workloadb:
+      Index: 3
+
+Resources:
+  # ---------- VPC ----------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - consumer-vpc
+              - !Ref AWS::StackName
+
+  Ipv6Cidr:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref VPC
+
+  # Egress-only Internet Gateway - IPv6 egress for the consumer instances (no NAT cost).
+  EIGW:
+    Type: AWS::EC2::EgressOnlyInternetGateway
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-eigw-${AWS::StackName}
+
+  # For::Each iteration: per subnet type (Workload, Endpoints) and AZ (2 AZs)
+  # Resources to create: 4 subnets, 4 route tables, 4 route table associations - obtaining AZ affinity
+  'Fn::ForEach::SubnetTypes':
+    - SubnetType
+    - [Workload, Endpoints]
+    - '${SubnetType}':
+      'Fn::ForEach::AZ':
+        - AvailabilityZone
+        - [a, b]
+          # Subnets
+        - '${SubnetType}Subnet${AvailabilityZone}':
+            DependsOn:
+              - Ipv6Cidr
+            Type: AWS::EC2::Subnet
+            Properties:
+              VpcId: !Ref VPC
+              AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+              CidrBlock: !Select
+                - !FindInMap [SubnetToIndex, !Sub "${SubnetType}${AvailabilityZone}", Index]
+                - !Cidr
+                  - !GetAtt VPC.CidrBlock
+                  - 256
+                  - 8
+              Ipv6CidrBlock: !Select
+                - !FindInMap [SubnetToIndex, !Sub "${SubnetType}${AvailabilityZone}", Index]
+                - !Cidr
+                  - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+                  - 256
+                  - 64
+              AssignIpv6AddressOnCreation: true
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub consumer-subnet-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Tables
+          '${SubnetType}RouteTable${AvailabilityZone}':
+            Type: AWS::EC2::RouteTable
+            Properties:
+              VpcId: !Ref VPC
+              Tags:
+                - Key: Name
+                  Value: !Join
+                    - '-'
+                    - - !Sub consumer-rt-${SubnetType}-AZ${AvailabilityZone}
+                      - !Ref AWS::StackName
+          # Route Table associations
+          '${SubnetType}RouteTableAssociation${AvailabilityZone}':
+            Type: AWS::EC2::SubnetRouteTableAssociation
+            Properties:
+              RouteTableId: !Ref
+                'Fn::Sub': '${SubnetType}RouteTable${AvailabilityZone}'
+              SubnetId: !Ref
+                'Fn::Sub': '${SubnetType}Subnet${AvailabilityZone}'
+
+  # For::Each iteration: per AZ - default IPv6 route (::/0) via the Egress-only
+  'Fn::ForEach::WorkloadEIGWRoutes':
+    - AvailabilityZone
+    - [a, b]
+    - 'DefaultToEIGWRoute${AvailabilityZone}':
+        Type: AWS::EC2::Route
+        Properties:
+          RouteTableId: !Ref
+            'Fn::Sub': 'WorkloadRouteTable${AvailabilityZone}'
+          DestinationIpv6CidrBlock: '::/0'
+          EgressOnlyInternetGatewayId: !Ref EIGW
+
+  # ---------- SECURITY GROUPS ----------
+  # Security Group (Instances)
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Instance Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-vpc-instance-security-group-${AWS::StackName}
+
+  InstanceSecurityGroupIngressEIC:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing EIC connection
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      SourceSecurityGroupId: !Ref EICSecurityGroup
+
+  InstanceSecurityGroupIngressGeneve:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing GENEVE (UDP 6081) from the tunnel endpoint
+      IpProtocol: udp
+      FromPort: 6081
+      ToPort: 6081
+      SourceSecurityGroupId: !Ref TunnelEndpointSecurityGroup
+
+  InstanceSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing egress traffic (IPv4)
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  InstanceSecurityGroupEgressIPv6:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing egress traffic (IPv6)
+      IpProtocol: -1
+      CidrIpv6: ::/0
+
+  # Security Group (EC2 Instance Connect endpoint)
+  EICSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Instance Connect Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-vpc-eic-security-group-${AWS::StackName}
+
+  EICSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref EICSecurityGroup
+      Description: Allowing EIC connection to the instances
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      DestinationSecurityGroupId: !Ref InstanceSecurityGroup
+
+  # Security Group (tunnel endpoint) - GENEVE from the consumer instances
+  TunnelEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Tunnel VPC endpoint Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-vpc-tunnel-endpoint-security-group-${AWS::StackName}
+
+  TunnelEndpointSecurityGroupIngressGeneve:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref TunnelEndpointSecurityGroup
+      Description: Allowing GENEVE (UDP 6081) from the consumer instances
+      IpProtocol: udp
+      FromPort: 6081
+      ToPort: 6081
+      SourceSecurityGroupId: !Ref InstanceSecurityGroup
+
+  # ---------- TUNNEL VPC ENDPOINT ----------
+  # One ENI per endpoint subnet. The subnets must be in the resource gateway's Availability Zones.
+  TunnelEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      VpcEndpointType: Tunnel
+      ResourceConfigurationArn: !Ref ResourceConfigurationArn
+      IpAddressType: ipv4
+      SubnetIds:
+        - !Ref EndpointsSubneta
+        - !Ref EndpointsSubnetb
+      SecurityGroupIds:
+        - !Ref TunnelEndpointSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-tunnel-endpoint-${AWS::StackName}
+
+  # ---------- CUSTOM RESOURCE: OBTAIN THE TUNNEL ENDPOINT IPS ----------
+  # The GENEVE target is the endpoint's ENI IP in each AZ
+  TunnelEndpointIps:
+    Type: Custom::TunnelEndpointIps
+    Properties:
+      ServiceToken: !GetAtt TunnelEndpointIpsFunction.Arn
+      NetworkInterfaceIds: !GetAtt TunnelEndpoint.NetworkInterfaceIds
+
+  # Lambda function
+  TunnelEndpointIpsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Runtime: python3.14
+      Handler: index.handler
+      Role: !GetAtt TunnelEndpointIpsRole.Arn
+      Timeout: 60
+      LoggingConfig:
+        LogGroup: !Ref TunnelEndpointIpsLogGroup
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def handler(event, context):
+              if event['RequestType'] in ['Create', 'Update']:
+                  try:
+                      eni_ids = event['ResourceProperties']['NetworkInterfaceIds']
+                      ec2 = boto3.client('ec2')
+                      response = ec2.describe_network_interfaces(NetworkInterfaceIds=eni_ids)
+                      pairs = sorted(
+                          f"{eni['AvailabilityZone']}={eni['PrivateIpAddress']}"
+                          for eni in response['NetworkInterfaces']
+                      )
+                      cfnresponse.send(event, context, cfnresponse.SUCCESS, {
+                          'EndpointIps': ' '.join(pairs)
+                      })
+                  except Exception as e:
+                      cfnresponse.send(event, context, cfnresponse.FAILED, {
+                          'Error': str(e)
+                      })
+              else:  # Delete
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+  # Log group for the Lambda function, managed by the stack so it's deleted with it
+  TunnelEndpointIpsLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/tunnel-endpoint-ips-${AWS::StackName}
+      RetentionInDays: 7
+
+  # IAM role for the Lambda function
+  TunnelEndpointIpsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: EC2DescribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeNetworkInterfaces
+                Resource: '*'
+
+  # ---------- EC2 INSTANCES ----------
+  # For::Each iteration: per AZ (2 AZs)
+  'Fn::ForEach::Instances':
+    - AvailabilityZone
+    - [a, b]
+    - 'Instance${AvailabilityZone}':
+        Type: AWS::EC2::Instance
+        Properties:
+          InstanceType: t3.micro
+          SecurityGroupIds:
+            - !Ref InstanceSecurityGroup
+          SubnetId: !Ref
+            'Fn::Sub': 'WorkloadSubnet${AvailabilityZone}'
+          ImageId: !Ref LatestAmiId
+          Ipv6AddressCount: 1
+          MetadataOptions:
+            HttpEndpoint: enabled
+            HttpTokens: required
+          BlockDeviceMappings:
+            - DeviceName: /dev/xvda
+              Ebs:
+                Encrypted: true
+          # Creates a kernel GENEVE device (gnv0) toward the tunnel endpoint and routes the shared network segment through it.
+          # `innerprotoinherit` makes the device carry raw IP packets (not Ethernet frames), which is what the tunnel endpoint
+          # expects (VNI 0, UDP 6081). Applications need no changes.
+          UserData:
+            Fn::Base64: !Sub
+              - |
+                #!/bin/bash
+                set -euo pipefail
+
+                cat > /etc/tunnel-endpoint.conf <<'EOF'
+                ENDPOINT_IPS="${EndpointIps}"
+                SEGMENT_CIDRS="${SegmentCidrList}"
+                GENEVE_MTU="8400"
+                EOF
+
+                cat > /usr/local/sbin/tunnel-endpoint-up.sh <<'EOF'
+                #!/bin/bash
+                set -euo pipefail
+                . /etc/tunnel-endpoint.conf
+
+                # Availability Zone of this instance (IMDSv2)
+                TOKEN=$(curl -sS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+                AZ=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+                # ENDPOINT_IPS is "<az>=<ip>" pairs. Prefer the endpoint IP in this instance's
+                # AZ (avoids cross-AZ traffic); fall back to the first one.
+                EP_IP=$(echo "$ENDPOINT_IPS" | tr ' ' '\n' | awk -F= -v az="$AZ" '$1 == az { print $2; exit }')
+                [ -n "$EP_IP" ] || EP_IP=$(echo "$ENDPOINT_IPS" | tr ' ' '\n' | head -n1 | cut -d= -f2)
+                [ -n "$EP_IP" ] || { echo "no tunnel endpoint IP configured" >&2; exit 1; }
+                SRC_IP=$(ip -4 route get "$EP_IP" | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+
+                ip link del gnv0 2>/dev/null || true
+                ip link add gnv0 type geneve id 0 remote "$EP_IP" innerprotoinherit
+                # Keeps the outer packet under the 8500-byte VPC endpoint MTU
+                ip link set gnv0 mtu "$GENEVE_MTU" up
+                for cidr in $SEGMENT_CIDRS; do
+                  ip route replace "$cidr" dev gnv0 src "$SRC_IP"
+                done
+                echo "gnv0 up: remote $EP_IP, routes: $SEGMENT_CIDRS"
+                EOF
+                chmod 0755 /usr/local/sbin/tunnel-endpoint-up.sh
+
+                cat > /etc/systemd/system/tunnel-endpoint.service <<'EOF'
+                [Unit]
+                Description=GENEVE device toward the PrivateLink tunnel endpoint
+                Wants=network-online.target
+                After=network-online.target
+
+                [Service]
+                Type=oneshot
+                RemainAfterExit=yes
+                ExecStart=/usr/local/sbin/tunnel-endpoint-up.sh
+                ExecStop=/usr/sbin/ip link del gnv0
+
+                [Install]
+                WantedBy=multi-user.target
+                EOF
+
+                systemctl daemon-reload
+                systemctl enable --now tunnel-endpoint.service
+              - EndpointIps: !GetAtt TunnelEndpointIps.EndpointIps
+                SegmentCidrList: !Join [' ', !Ref SegmentCidrs]
+          Tags:
+            - Key: Name
+              Value: !Join
+                - '-'
+                - - !Sub consumer-instance-${AvailabilityZone}
+                  - !Ref AWS::StackName
+
+  # ---------- EC2 INSTANCE CONNECT ENDPOINT ----------
+  EICEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      PreserveClientIp: false
+      SecurityGroupIds:
+        - !Ref EICSecurityGroup
+      SubnetId: !Ref EndpointsSubneta
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - consumer-eic
+              - !Ref AWS::StackName
+
+Outputs:
+  ConsumerVpcId:
+    Description: Consumer VPC ID
+    Value: !Ref VPC
+
+  TunnelEndpointId:
+    Description: Tunnel VPC endpoint ID
+    Value: !Ref TunnelEndpoint
+
+  ConsumerInstanceA:
+    Description: Consumer EC2 Instance ID (AZ a) - connect via EC2 Instance Connect
+    Value: !Ref Instancea
+
+  ConsumerInstanceB:
+    Description: Consumer EC2 Instance ID (AZ b) - connect via EC2 Instance Connect
+    Value: !Ref Instanceb

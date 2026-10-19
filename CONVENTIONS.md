@@ -83,6 +83,7 @@ Conventions:
 
 - **Modules → exact pin** with an explicit `=` operator (e.g. `version = "= 4.7.3"`), making the exact-pin intent unambiguous.
 - **Providers → single floor** (`>= x.y.z`). Raise all patterns to the agreed floor; never lower it.
+- **Pattern-specific floors**: a pattern that needs a newer provider feature raises only its own floor, and is listed here. Centralized VPC Endpoints uses `hashicorp/aws >= 6.50.0` (resource gateway `resource_config_dns_resolution`). Network Segment Access with Tunnel Endpoints uses `hashicorp/aws >= 6.50.0` and `hashicorp/awscc >= 1.103.0` (CIDR resource configuration and tunnel VPC endpoint). It also pins `aws-ia/vpc/aws = 4.9.0`.
 - Terraform core: `required_version = ">= 1.3.0"` is uniform across every `providers.tf` and is left unchanged — **except EKS**, which uses `>= 1.4.0` because it relies on the `terraform_data` resource (Terraform 1.4+).
 - The rule for choosing a value is "highest currently-used stable value, applied uniformly." `python3.14` is a GA AWS Lambda managed runtime.
 
@@ -118,7 +119,7 @@ Every pattern that creates a service network and/or service **enables an access 
 - **Mechanism:**
   - Terraform: `aws_vpclattice_access_log_subscription`
   - CloudFormation: `AWS::VpcLattice::AccessLogSubscription`
-- **Scope:** prefer service-network-level logging where a single-account pattern owns the service network, so one subscription covers the demo. Multi-account patterns log at the level owned by the account that creates the network/service.
+- **Scope:** prefer service-network-level logging where a single-account pattern owns the service network, so one subscription covers the demo. Multi-account patterns log at the level owned by the account that creates the network/service. Network Segment Access with Tunnel Endpoints has neither a service network nor a service, so it logs at the resource configuration scope.
 - **Cost:** access logging uses CloudWatch vended-logs pricing — each pattern's docs include a cost note.
 - **Teardown:** the log group is created and destroyed with the pattern; teardown docs mention removing it.
 
@@ -133,6 +134,8 @@ VPC Lattice answers DNS with a managed address; the **IPv4 range depends on what
 - **IPv6:** **`fd00:ec2:80::/64`** — for both services and VPC resources.
 
 Do not use the link-local (`169.254.171.x/24`) range in the VPC-resources patterns, or the `129.224.0.x/17` range in the service patterns.
+
+Exception: in Network Segment Access with Tunnel Endpoints, the consumer reaches the provider's **real IP addresses** through a tunnel VPC endpoint, so neither managed range applies. It is also the one pattern whose VPCs don't overlap (consumer `10.0.0.0/16`, provider `10.1.0.0/16`).
 
 ---
 

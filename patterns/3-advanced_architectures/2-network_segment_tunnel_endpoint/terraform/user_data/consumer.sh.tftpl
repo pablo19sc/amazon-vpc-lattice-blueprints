@@ -1,0 +1,61 @@
+#!/bin/bash
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+#
+# Consumer instance: creates a kernel GENEVE device (gnv0) toward the tunnel VPC
+# endpoint and routes the shared network segment through it. `innerprotoinherit`
+# makes the device carry raw IP packets (not Ethernet frames), which is what the
+# tunnel endpoint expects (VNI 0, UDP 6081). Applications need no changes.
+set -euo pipefail
+
+cat > /etc/tunnel-endpoint.conf <<'EOF'
+ENDPOINT_IPS="${endpoint_ips}"
+SEGMENT_CIDRS="${segment_cidrs}"
+GENEVE_MTU="8400"
+EOF
+
+cat > /usr/local/sbin/tunnel-endpoint-up.sh <<'EOF'
+#!/bin/bash
+set -euo pipefail
+. /etc/tunnel-endpoint.conf
+
+# Availability Zone of this instance (IMDSv2)
+TOKEN=$(curl -sS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+AZ=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+# ENDPOINT_IPS is "<az>=<ip>" pairs. Prefer the endpoint IP in this instance's
+# AZ (avoids cross-AZ traffic); fall back to the first one.
+EP_IP=$(echo "$ENDPOINT_IPS" | tr ' ' '\n' | awk -F= -v az="$AZ" '$1 == az { print $2; exit }')
+[ -n "$EP_IP" ] || EP_IP=$(echo "$ENDPOINT_IPS" | tr ' ' '\n' | head -n1 | cut -d= -f2)
+[ -n "$EP_IP" ] || { echo "no tunnel endpoint IP configured" >&2; exit 1; }
+SRC_IP=$(ip -4 route get "$EP_IP" | awk '{ for (i = 1; i <= NF; i++) if ($i == "src") { print $(i + 1); exit } }')
+
+ip link del gnv0 2>/dev/null || true
+ip link add gnv0 type geneve id 0 remote "$EP_IP" innerprotoinherit
+# Keeps the outer packet under the 8500-byte VPC endpoint MTU
+ip link set gnv0 mtu "$GENEVE_MTU" up
+for cidr in $SEGMENT_CIDRS; do
+  ip route replace "$cidr" dev gnv0 src "$SRC_IP"
+done
+echo "gnv0 up: remote $EP_IP, routes: $SEGMENT_CIDRS"
+EOF
+chmod 0755 /usr/local/sbin/tunnel-endpoint-up.sh
+
+cat > /etc/systemd/system/tunnel-endpoint.service <<'EOF'
+[Unit]
+Description=GENEVE device toward the PrivateLink tunnel endpoint
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/tunnel-endpoint-up.sh
+ExecStop=/usr/sbin/ip link del gnv0
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now tunnel-endpoint.service

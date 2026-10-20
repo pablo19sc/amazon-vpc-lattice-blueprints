@@ -39,7 +39,7 @@ resource "aws_vpclattice_service_network_resource_association" "resource_associa
 # VPC
 module "consumer_vpc_single" {
   source  = "aws-ia/vpc/aws"
-  version = "= 4.7.3"
+  version = "= 4.9.0"
 
   name                                 = "consumer-vpc-single-${var.identifier}"
   az_count                             = 2

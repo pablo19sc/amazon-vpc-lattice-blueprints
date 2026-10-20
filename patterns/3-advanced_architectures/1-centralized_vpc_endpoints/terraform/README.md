@@ -101,7 +101,7 @@ After deployment, follow the [Testing Connectivity](../README.md#testing-connect
 | Name | Source | Version |
 |------|--------|---------|
 | <a name="module_consumer_vpc_group"></a> [consumer\_vpc\_group](#module\_consumer\_vpc\_group) | aws-ia/vpc/aws | = 4.9.0 |
-| <a name="module_consumer_vpc_single"></a> [consumer\_vpc\_single](#module\_consumer\_vpc\_single) | aws-ia/vpc/aws | = 4.7.3 |
+| <a name="module_consumer_vpc_single"></a> [consumer\_vpc\_single](#module\_consumer\_vpc\_single) | aws-ia/vpc/aws | = 4.9.0 |
 | <a name="module_endpoints_vpc"></a> [endpoints\_vpc](#module\_endpoints\_vpc) | aws-ia/vpc/aws | = 4.9.0 |
 | <a name="module_vpc_endpoints"></a> [vpc\_endpoints](#module\_vpc\_endpoints) | ../../../tf_modules/vpc_endpoints | n/a |
 

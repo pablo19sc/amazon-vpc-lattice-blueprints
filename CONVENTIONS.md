@@ -63,6 +63,7 @@ Notes:
 
 - The `terraform/README.md` is **generated** from `.header.md` plus the module's inputs/outputs. Edit `.header.md`, then regenerate — never edit the README by hand.
 - The terraform-docs configuration is shared at the repo root: `.config/.terraform-docs.yaml` (`formatter: markdown`, `header-from: .header.md`, `output.file: "README.md"`).
+- A pattern may split `main.tf` into per-role files when that makes each part easier to read (e.g. Centralized VPC Endpoints: `centralized_endpoints.tf`, `consumer_group.tf`, `consumer_single.tf`), keeping a small `main.tf` for the common items.
 - Shared Terraform modules live **only** in `patterns/tf_modules/`. Do not introduce a second shared-module root.
 
 ---

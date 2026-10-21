@@ -4,7 +4,9 @@ This pattern centralizes interface VPC endpoints in a shared **endpoints VPC** a
 
 ![Centralized VPC endpoints](../../../images/pattern3_architecture1.png)
 
-Each AWS service endpoint is modeled as a **child resource configuration** grouped under a single **group resource configuration**, each with a **custom domain name** (e.g. `ssm.<region>.amazonaws.com`). Controlled private DNS on the consumer VPC association (scoped to `*.amazonaws.com` only) makes the consumer's normal `ssm.<region>.amazonaws.com` lookup resolve to a VPC Lattice managed address (`129.224.0.x/17`) and route to the central endpoint, with no client configuration changes.
+Each AWS service endpoint is modeled as a resource configuration with a **custom domain name** (e.g. `ssm.<region>.amazonaws.com`). Controlled private DNS on the consumer VPC association (scoped to `*.amazonaws.com` only) makes the consumer's normal `ssm.<region>.amazonaws.com` lookup resolve to a VPC Lattice managed address (`129.224.0.x/17`) and route to the central endpoint, with no client configuration changes.
+
+The same centralized endpoints are consumed in **two ways**, each with its own service network and consumer VPC: as **child resource configurations under one group** (consumer VPC *group*), and as **individual single resource configurations** (consumer VPC *single*). Both reach the centralized services the same way, but they differ in what happens to every *other* AWS service name. See [Two consumption models](#two-consumption-models-group-vs-single-resource-configurations).
 
 ## Why centralize, and why with VPC Lattice
 
@@ -14,19 +16,19 @@ Each AWS service endpoint is modeled as a **child resource configuration** group
 
 - **No NAT with overlapping CIDRs**. VPC Lattice brokers the connection, so the consumer and endpoints VPCs can share the same address space with no NAT or re-addressing.
 - **Automatic DNS resolution**. Private DNS on the VPC association resolves the normal `<service>.<region>.amazonaws.com` name through VPC Lattice, with no Route 53 private hosted zones or per-consumer DNS plumbing.
-- **Central logging**. The service network's access log subscription records every request in one place, however many consumers you associate.
+- **Central logging**. Access logs on the service network and on the resource configurations record every connection, however many consumers you associate.
 
 ## What gets deployed
 
 | Component | Details |
 |-----------|---------|
 | **Endpoints VPC** (`10.0.0.0/16`) | Centralized interface VPC endpoints for AWS services (SSM, SSM Messages, EC2 Messages, STS) |
-| **Consumer VPC** (`10.0.0.0/16`) | EC2 instances (1 per AZ) consuming AWS services through the centralized endpoints; associated to the service network |
-| **VPC Lattice service network** | Service network connecting the consumer VPC to the centralized endpoints |
-| **Resource gateway** | Dual-stack resource gateway in the endpoints VPC enabling VPC Lattice to route to the endpoints |
-| **Resource configurations** | A group resource configuration (group domain `<region>.amazonaws.com`) plus one child configuration per endpoint, each with a custom `*.amazonaws.com` domain name |
-| **Resource association** | A single association of the group resource configuration to the service network, with private DNS resolution (all child endpoints are reachable through it) |
-| **Access logging** | A CloudWatch Logs log group (`/aws/vpclattice/<identifier>`) and an access log subscription at the service-network scope |
+| **Consumer VPCs** (`10.0.0.0/16` each) | Two consumer VPCs, *group* and *single*, each with one EC2 instance and associated to its own service network |
+| **VPC Lattice service networks** | One per consumption model, connecting each consumer VPC to the centralized endpoints |
+| **Resource gateway** | Dual-stack resource gateway in the endpoints VPC, shared by both consumption models |
+| **Resource configurations (group)** | A group resource configuration (group domain `<region>.amazonaws.com`) plus one child configuration per endpoint, with a single association to the *group* service network |
+| **Resource configurations (single)** | One single resource configuration per endpoint, each with its own association to the *single* service network |
+| **Access logging** | CloudWatch Logs log groups per service network and per resource configuration type (group / single), so traffic is visible from both the service network owner and the endpoints owner |
 
 ## VPC Lattice resource configuration
 
@@ -34,28 +36,33 @@ This pattern uses VPC Lattice **VPC Resources** (not a service with listeners/ta
 
 | Aspect | Configuration |
 |--------|---------------|
-| **Construct** | Resource gateway + group/child resource configurations + a single group resource association |
+| **Construct** | Resource gateway + resource configurations (group/child or single) + service network resource associations |
 | **Custom Domain Name** | ✅ Yes (`<service>.<region>.amazonaws.com` per endpoint) |
 | **Protocol / Port** | TCP on port 443 |
 | **Private DNS** | ✅ Enabled, scoped to `*.amazonaws.com` only (`SPECIFIED_DOMAINS_ONLY`) |
 | **Resolved address** | VPC Lattice VPC-resource range `129.224.0.x/17` (IPv6 `fd00:ec2:80::/64`) |
 | **Targets** | Centralized interface VPC endpoints in the endpoints VPC |
 
-## Grouping the endpoints under one resource configuration
+## Two consumption models: group vs single resource configurations
 
-Each centralized endpoint is a **child** resource configuration that belongs to one **group** resource configuration. The group defines a *group domain* (`<region>.amazonaws.com`), and every child's custom domain (`<service>.<region>.amazonaws.com`) is a subdomain of it. Only the **group** is associated to the service network — a child can't be associated on its own; it becomes reachable automatically as a member of the group.
+A resource configuration carries one custom domain, and VPC Lattice manages a private hosted zone for it in each consumer VPC. How you model the endpoints decides **which domain that zone covers**, and that is the main difference between both models. The pattern deploys both side by side so you can compare them: each needs its own service network, because a VPC associates to only one service network and two resource configurations with the same custom domain can't be in the same service network.
 
-**Why group them**
+| Aspect | Group (consumer VPC *group*) | Single (consumer VPC *single*) |
+|--------|------------------------------|--------------------------------|
+| **Resource configurations** | 1 group (group domain `<region>.amazonaws.com`) + 1 child per endpoint | 1 single per endpoint |
+| **Service network associations** | 1 (the group covers all its children) | 1 per endpoint |
+| **Private hosted zone in the consumer VPC** | `<region>.amazonaws.com` | `<service>.<region>.amazonaws.com`, one per endpoint |
+| **AWS services not centralized** | Fail DNS resolution (NXDOMAIN) | Resolve as usual (public endpoint, or a local VPC endpoint) |
+| **Adding an endpoint** | Add one child configuration | Add one configuration and one association |
+| **Billing** | One hourly charge for the group, however many children it holds | One hourly charge per resource configuration |
 
-- **Adding endpoints at scale is a single step.** To centralize another AWS service you add one child resource configuration — no new service-network association is needed, because the existing group association already covers it. The "add an endpoint" change stays small and uniform as the list grows.
-- **Fewer billed associations.** As a service network owner you are billed hourly for each resource configuration *associated* to the service network. With the group model only the group is associated (one association) no matter how many endpoints you centralize, instead of one association per endpoint. (Data-processing charges still apply per traffic.)
-- **Simpler DNS scoping.** One group domain covers every child, so the consumer's `*.amazonaws.com` private DNS scoping and the single group association carry all endpoints.
+> **Note**: With the group model, VPC Lattice answers for the **whole** `<region>.amazonaws.com` domain in the consumer VPC. Any AWS service under it without a child configuration (for example `ec2.<region>.amazonaws.com`, or the S3 and DynamoDB names that gateway endpoints rely on) fails DNS resolution. Exceptions need a local VPC endpoint in the consumer VPC (its more specific zone takes precedence).
 
-**Limitations and things to watch**
+**Things to take into account**
 
-- **Quotas.** VPC Lattice enforces quotas on child resource configurations per group, resource configurations associated per service network, and resource configurations per Region, among others. Keep these in mind before scaling the endpoint list, and review the current values in the [VPC Lattice quotas](https://docs.aws.amazon.com/vpc-lattice/latest/ug/quotas.html) documentation.
-- **Child domains must be subdomains of the group domain.** The group domain here is `<region>.amazonaws.com`, so only endpoints whose DNS name ends in `.<region>.amazonaws.com` (e.g. `ssm.<region>.amazonaws.com`) can be children and get a VPC Lattice-managed private hosted zone in the consumer VPC. If a child's custom domain isn't a subdomain of the group domain, VPC Lattice won't provision a private hosted zone for it.
-- **Endpoints that don't follow the standard naming must live outside the group.** Some AWS services publish endpoints that are not subdomains of `<region>.amazonaws.com` (for example endpoints under `*.api.aws`, or global endpoints without the regional suffix). These can't be children of this group — model them as separate **`SINGLE`** resource configurations with their own custom domain and their own service-network association, and add the domain to the consumer's private DNS scoping.
+- **Group**: a good fit when consumer VPCs should reach AWS services **only** through the centralized endpoints (for example, highly regulated environments), and it scales the endpoint list at one charge. Child domains must be subdomains of the group domain, so endpoints outside it (such as dual-stack names under `*.api.aws`) need their own single configuration and association. You can also narrow the scope with a per-service group domain (e.g. `ecr.<region>.amazonaws.com` covering `ecr` and `dkr.ecr`), so nothing outside that service is affected.
+- **Single**: a good fit when consumers also use AWS services you haven't centralized, as each zone covers exactly one service name. Each endpoint adds its own configuration, association and hourly charge, and any domain works (including `*.api.aws` names).
+- Custom domain names can't be changed after creation, and there are quotas on resource configurations (per Region, per group, and associated per service network). Review the current values in the [VPC Lattice quotas](https://docs.aws.amazon.com/vpc-lattice/latest/ug/quotas.html) documentation before scaling the endpoint list.
 
 ## Implementation
 
@@ -68,22 +75,22 @@ This pattern is available for both IaC tools (CloudFormation + Terraform parity)
 
 ## Testing Connectivity
 
-After deploying either implementation, you connect to a consumer EC2 instance via Systems Manager, confirm AWS service endpoints resolve through VPC Lattice, and call an AWS API to confirm the request flows through the centralized endpoints — from a consumer VPC with no interface endpoints of its own.
+After deploying, you connect to the consumer EC2 instance in each consumer VPC via Systems Manager, confirm the centralized endpoints resolve through VPC Lattice in both, and compare how each consumption model resolves an AWS service that isn't centralized — from consumer VPCs with no interface endpoints of their own.
 
 <details>
 <summary>Click to expand testing steps</summary>
 
-#### Step 1: Connect to a Consumer Instance via Systems Manager
+#### Step 1: Connect to the Consumer Instances via Systems Manager
 
 A successful Session Manager connection already proves the centralized endpoints work — Session Manager requires connectivity to the SSM, SSM Messages, and EC2 Messages endpoints.
 
-> **Note**: Consumer EC2 instance IDs are provided as outputs when deploying the CloudFormation or Terraform code.
+> **Note**: Consumer EC2 instance IDs are provided as outputs when deploying the code (in Terraform, the `instance_ids` output is keyed `group` and `single`). Run the next steps from both instances.
 
 ```bash
 aws ssm start-session --target <consumer-instance-id> --region <your-region>
 ```
 
-**Expected Result**: Session Manager connects to the instance.
+**Expected Result**: Session Manager connects to both instances.
 
 #### Step 2: Verify DNS Resolution for Centralized Endpoints
 
@@ -95,16 +102,29 @@ dig +short ec2messages.<your-region>.amazonaws.com
 dig +short sts.<your-region>.amazonaws.com
 ```
 
-**Expected Result**: addresses in the VPC Lattice VPC-resource range `129.224.0.x/17` (IPv6 `fd00:ec2:80::/64`), indicating VPC Lattice is handling resolution and routing.
+**Expected Result**: in both consumer VPCs, addresses in the VPC Lattice VPC-resource range `129.224.0.x/17` (IPv6 `fd00:ec2:80::/64`), indicating VPC Lattice is handling resolution and routing.
 
 ```
 129.224.0.123
 129.224.0.124
 ```
 
-#### Step 3: Test Endpoint Connectivity
+#### Step 3: Compare Resolution of a Non-Centralized Service
 
-Call an AWS API to confirm traffic reaches the service through the centralized endpoint:
+Resolve an AWS service that is not in the centralized endpoint list:
+
+```bash
+dig ec2.<your-region>.amazonaws.com | grep -E 'status|^ec2'
+```
+
+**Expected Result**: the two consumption models differ.
+
+- **Group** consumer instance: `status: NXDOMAIN`, as the VPC Lattice managed zone for `<region>.amazonaws.com` has no record for it.
+- **Single** consumer instance: `status: NOERROR` with the service's public addresses, as no VPC Lattice zone covers that name. The consumer VPCs have no internet access, so this step shows DNS behavior only.
+
+#### Step 4: Test Endpoint Connectivity
+
+From both instances, call an AWS API to confirm traffic reaches the service through the centralized endpoint:
 
 ```bash
 aws sts get-caller-identity --region <your-region>
@@ -140,5 +160,5 @@ After successfully deploying this pattern:
 
 1. **Test connectivity**: Follow the testing guide above to verify endpoints work through VPC Lattice.
 2. **Add more endpoints**: Extend the `vpc_endpoints` list to centralize additional AWS services.
-3. **Scale consumers**: Associate more consumer VPCs to share the centralized endpoints.
+3. **Scale consumers**: Associate more consumer VPCs to the service network of the consumption model that fits them.
 4. **Explore other patterns**: Try the [Simple Architectures](../../1-simple_architectures/) target types or [Multi-Account patterns](../../2-multi_account/).

@@ -9,7 +9,7 @@ Read this when deploying a pattern, verifying connectivity, cleaning up, or esti
 
 ```
 patterns/<category>/<pattern>/
-├── terraform/         # main.tf, variables.tf, outputs.tf, providers.tf, .header.md, README.md (generated)
+├── terraform/         # main.tf (some patterns split it per role), variables.tf, outputs.tf, providers.tf, .header.md, README.md (generated)
 └── cloudformation/    # *.yaml templates, Makefile, README.md
 ```
 

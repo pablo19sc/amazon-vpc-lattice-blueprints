@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
-Description: Consumer VPC, VPC Lattice (service network and resource associations), and EC2 Instances
+Description: Group consumption model - service network (group resource association), consumer VPC and EC2 instance
 Transform: 'AWS::LanguageExtensions'
 
 Parameters:
@@ -11,6 +11,9 @@ Parameters:
   ResourceConfigurationGroup:
     Type: String
     Description: Group resource configuration ID for the centralized VPC endpoints
+  InstanceProfile:
+    Type: String
+    Description: EC2 instance profile name (common stack)
 
 Mappings:
   SubnetToIndex:
@@ -20,7 +23,40 @@ Mappings:
       Index: 1
 
 Resources:
-  # ---------- VPC ----------
+  # ---------- VPC LATTICE SERVICE NETWORK ----------
+  VpcLatticeServiceNetwork:
+    Type: AWS::VpcLattice::ServiceNetwork
+    Properties:
+      AuthType: NONE
+      Name: service-network-group
+
+  # CloudWatch Logs log group (service network owner view)
+  VpcLatticeAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vpclattice/${AWS::StackName}/service-network-group'
+      RetentionInDays: 7
+
+  # Access log subscription (RESOURCE log type - traffic to the associated resource configurations)
+  VpcLatticeAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    Properties:
+      ResourceIdentifier: !Ref VpcLatticeServiceNetwork
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${VpcLatticeAccessLogs}'
+      ServiceNetworkLogType: RESOURCE
+
+  # Resource association (group resource configuration - covers all child configurations)
+  ResourceAssociation:
+    Type: AWS::VpcLattice::ServiceNetworkResourceAssociation
+    Properties:
+      PrivateDnsEnabled: true
+      ResourceConfigurationId: !Ref ResourceConfigurationGroup
+      ServiceNetworkId: !Ref VpcLatticeServiceNetwork
+      Tags:
+        - Key: Name
+          Value: !Sub resource-association-group-${AWS::StackName}
+
+  # ---------- CONSUMER VPC ----------
   VPC:
     Type: AWS::EC2::VPC
     Properties:
@@ -31,7 +67,7 @@ Resources:
         - Key: Name
           Value: !Join
             - '-'
-            - - consumer-vpc
+            - - consumer-vpc-group
               - !Ref AWS::StackName
 
   Ipv6Cidr:
@@ -41,7 +77,7 @@ Resources:
       VpcId: !Ref VPC
 
   # For::Each iteration: per AZ (2 AZs)
-  # Resources to create: 2 subnets, 2 route tables, 2 route table associations - obtaining AZ affinity
+  # Resources to create: 2 subnets, 2 route tables, 2 route table associations - obtaining AZ affinity
   'Fn::ForEach::AZ':
     - AvailabilityZone
     - [a, b]
@@ -91,15 +127,51 @@ Resources:
           SubnetId: !Ref
             'Fn::Sub': 'WorkloadSubnet${AvailabilityZone}'
 
-  # Security Group (Instances)
+  # VPC Lattice VPC association
+  VpcLatticeVpcAssociation:
+    Type: AWS::VpcLattice::ServiceNetworkVpcAssociation
+    Properties:
+      DnsOptions:
+        PrivateDnsPreference: SPECIFIED_DOMAINS_ONLY
+        PrivateDnsSpecifiedDomains:
+          - '*.amazonaws.com'
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcLatticeSecurityGroup
+      ServiceNetworkIdentifier: !Ref VpcLatticeServiceNetwork
+      VpcIdentifier: !Ref VPC
+
+  # EC2 instance
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref WorkloadSubneta
+      ImageId: !Ref LatestAmiId
+      Ipv6AddressCount: 1
+      IamInstanceProfile: !Ref InstanceProfile
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-instance-group-${AWS::StackName}
+
+  # Security Group (EC2 instance)
   InstanceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Instance Security Group
+      GroupDescription: EC2 Instance Security Group
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub consumer-vpc-instance-security-group-${AWS::StackName}
+          Value: !Sub consumer-vpc-group-instance-security-group-${AWS::StackName}
 
   InstanceSecurityGroupEgress:
     Type: AWS::EC2::SecurityGroupEgress
@@ -117,7 +189,7 @@ Resources:
       IpProtocol: -1
       CidrIpv6: ::/0
 
-  # Security Group (VPC Lattice VPC association)
+  # Security Group (VPC Lattice service network association)
   VpcLatticeSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -125,120 +197,19 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub consumer-vpc-vpclattice-security-group-${AWS::StackName}
+          Value: !Sub consumer-vpc-group-vpclattice-security-group-${AWS::StackName}
 
   VpcLatticeSecurityGroupIngressInstanceHTTPS:
     Type: AWS::EC2::SecurityGroupIngress
     Properties:
       GroupId: !Ref VpcLatticeSecurityGroup
-      Description: Allowing HTTPS traffic
+      Description: Allowing HTTPS traffic from the EC2 instance
       IpProtocol: tcp
       FromPort: 443
       ToPort: 443
       SourceSecurityGroupId: !Ref InstanceSecurityGroup
 
-  # ---------- VPC LATTICE SERVICE NETWORK AND ASSOCIATIONS ----------
-  # VPC Lattice service network
-  VpcLatticeServiceNetwork:
-    Type: AWS::VpcLattice::ServiceNetwork
-    Properties:
-      AuthType: NONE
-      Name: service-network
-
-  # VPC Lattice access logging - CloudWatch Logs log group (access logs destination)
-  VpcLatticeAccessLogs:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub '/aws/vpclattice/${AWS::StackName}'
-      RetentionInDays: 7
-
-  # Access log subscription (service network scope - covers all associated resources)
-  VpcLatticeAccessLogSubscription:
-    Type: AWS::VpcLattice::AccessLogSubscription
-    Properties:
-      ResourceIdentifier: !Ref VpcLatticeServiceNetwork
-      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${VpcLatticeAccessLogs}'
-
-  # VPC Lattice service network VPC association
-  VpcLatticeVpcAssociation:
-    Type: AWS::VpcLattice::ServiceNetworkVpcAssociation
-    Properties:
-      DnsOptions:
-          PrivateDnsPreference: SPECIFIED_DOMAINS_ONLY
-          PrivateDnsSpecifiedDomains:
-            - '*.amazonaws.com'
-      PrivateDnsEnabled: true
-      SecurityGroupIds:
-        - !Ref VpcLatticeSecurityGroup
-      ServiceNetworkIdentifier: !Ref VpcLatticeServiceNetwork
-      VpcIdentifier: !Ref VPC
-
-  # Group resource configuration association to the service network.
-  ResourceAssociation:
-    Type: AWS::VpcLattice::ServiceNetworkResourceAssociation
-    Properties:
-      PrivateDnsEnabled: true
-      ResourceConfigurationId: !Ref ResourceConfigurationGroup
-      ServiceNetworkId: !Ref VpcLatticeServiceNetwork
-
-  # ---------- IAM ROLE (EC2 INSTANCE) ----------
-  EC2InstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub 'ec2-ssm-role-${AWS::StackName}'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Sid: '1'
-            Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
-      Path: /
-
-  EC2InstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      InstanceProfileName: !Sub 'ec2-instance-profile-${AWS::StackName}'
-      Roles:
-        - !Ref EC2InstanceRole
-
-  # ---------- EC2 INSTANCES ----------
-  # For::Each iteration: per AZ (2 AZs)
-  'Fn::ForEach::Instances':
-    - AvailabilityZone
-    - [a, b]
-    - 'Instance${AvailabilityZone}':
-        Type: AWS::EC2::Instance
-        Properties:
-          InstanceType: t2.micro
-          SecurityGroupIds:
-            - !Ref InstanceSecurityGroup
-          SubnetId: !Ref
-            'Fn::Sub': 'WorkloadSubnet${AvailabilityZone}'
-          ImageId: !Ref LatestAmiId
-          Ipv6AddressCount: 1
-          IamInstanceProfile: !Ref EC2InstanceProfile
-          MetadataOptions:
-            HttpEndpoint: enabled
-            HttpTokens: required
-          BlockDeviceMappings:
-            - DeviceName: /dev/xvda
-              Ebs:
-                Encrypted: true
-          Tags:
-            - Key: Name
-              Value: !Join
-                - '-'
-                - - !Sub consumer-instance-${AvailabilityZone}
-                  - !Ref AWS::StackName
-
 Outputs:
-  InstanceA:
-    Description: Consumer EC2 Instance ID (AZ a)
-    Value: !Ref Instancea
-  InstanceB:
-    Description: Consumer EC2 Instance ID (AZ b)
-    Value: !Ref Instanceb
+  InstanceId:
+    Description: Consumer EC2 Instance ID (group consumption model)
+    Value: !Ref Instance

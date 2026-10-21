@@ -1,0 +1,229 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+AWSTemplateFormatVersion: 2010-09-09
+Description: Single consumption model - service network (single resource associations), consumer VPC and EC2 instance
+Transform: 'AWS::LanguageExtensions'
+
+Parameters:
+  LatestAmiId:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+  ResourceConfigurationsSingle:
+    Type: CommaDelimitedList
+    Description: Single resource configuration IDs for the centralized VPC endpoints (ssm, ssmmessages, ec2messages, sts - in this order)
+  InstanceProfile:
+    Type: String
+    Description: EC2 instance profile name (common stack)
+
+Mappings:
+  SubnetToIndex:
+    Workloada:
+      Index: 0
+    Workloadb:
+      Index: 1
+  EndpointToIndex:
+    ssm:
+      Index: 0
+    ssmmessages:
+      Index: 1
+    ec2messages:
+      Index: 2
+    sts:
+      Index: 3
+
+Resources:
+  # ---------- VPC LATTICE SERVICE NETWORK ----------
+  VpcLatticeServiceNetwork:
+    Type: AWS::VpcLattice::ServiceNetwork
+    Properties:
+      AuthType: NONE
+      Name: service-network-single
+
+  # CloudWatch Logs log group (service network owner view)
+  VpcLatticeAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vpclattice/${AWS::StackName}/service-network-single'
+      RetentionInDays: 7
+
+  # Access log subscription (RESOURCE log type - traffic to the associated resource configurations)
+  VpcLatticeAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    Properties:
+      ResourceIdentifier: !Ref VpcLatticeServiceNetwork
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${VpcLatticeAccessLogs}'
+      ServiceNetworkLogType: RESOURCE
+
+  # Resource associations (1 per single resource configuration)
+  'Fn::ForEach::EndpointTypes':
+    - EndpointType
+    - [ssm, ssmmessages, ec2messages, sts]
+    - '${EndpointType}ResourceAssociation':
+        Type: AWS::VpcLattice::ServiceNetworkResourceAssociation
+        Properties:
+          PrivateDnsEnabled: true
+          ResourceConfigurationId: !Select
+            - !FindInMap [EndpointToIndex, !Ref EndpointType, Index]
+            - !Ref ResourceConfigurationsSingle
+          ServiceNetworkId: !Ref VpcLatticeServiceNetwork
+          Tags:
+            - Key: Name
+              Value: !Sub resource-association-single-${EndpointType}-${AWS::StackName}
+
+  # ---------- CONSUMER VPC ----------
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Join
+            - '-'
+            - - consumer-vpc-single
+              - !Ref AWS::StackName
+
+  Ipv6Cidr:
+    Type: AWS::EC2::VPCCidrBlock
+    Properties:
+      AmazonProvidedIpv6CidrBlock: true
+      VpcId: !Ref VPC
+
+  # For::Each iteration: per AZ (2 AZs)
+  # Resources to create: 2 subnets, 2 route tables, 2 route table associations - obtaining AZ affinity
+  'Fn::ForEach::AZ':
+    - AvailabilityZone
+    - [a, b]
+    - 'WorkloadSubnet${AvailabilityZone}':
+        DependsOn:
+          - Ipv6Cidr
+        Type: AWS::EC2::Subnet
+        Properties:
+          VpcId: !Ref VPC
+          AvailabilityZone: !Sub ${AWS::Region}${AvailabilityZone}
+          CidrBlock: !Select
+            - !FindInMap [SubnetToIndex, !Sub "Workload${AvailabilityZone}", Index]
+            - !Cidr
+              - !GetAtt VPC.CidrBlock
+              - 256
+              - 8
+          Ipv6CidrBlock: !Select
+            - !FindInMap [SubnetToIndex, !Sub "Workload${AvailabilityZone}", Index]
+            - !Cidr
+              - !Select [0, !GetAtt VPC.Ipv6CidrBlocks]
+              - 256
+              - 64
+          AssignIpv6AddressOnCreation: true
+          Tags:
+            - Key: Name
+              Value: !Join
+                - '-'
+                - - !Sub consumer-subnet-workload-AZ${AvailabilityZone}
+                  - !Ref AWS::StackName
+      # Route Tables
+      'WorkloadRouteTable${AvailabilityZone}':
+        Type: AWS::EC2::RouteTable
+        Properties:
+          VpcId: !Ref VPC
+          Tags:
+            - Key: Name
+              Value: !Join
+                - '-'
+                - - !Sub consumer-rt-workload-AZ${AvailabilityZone}
+                  - !Ref AWS::StackName
+      # Route Table associations
+      'WorkloadRouteTableAssociation${AvailabilityZone}':
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+          RouteTableId: !Ref
+            'Fn::Sub': 'WorkloadRouteTable${AvailabilityZone}'
+          SubnetId: !Ref
+            'Fn::Sub': 'WorkloadSubnet${AvailabilityZone}'
+
+  # VPC Lattice VPC association
+  VpcLatticeVpcAssociation:
+    Type: AWS::VpcLattice::ServiceNetworkVpcAssociation
+    Properties:
+      DnsOptions:
+        PrivateDnsPreference: SPECIFIED_DOMAINS_ONLY
+        PrivateDnsSpecifiedDomains:
+          - '*.amazonaws.com'
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref VpcLatticeSecurityGroup
+      ServiceNetworkIdentifier: !Ref VpcLatticeServiceNetwork
+      VpcIdentifier: !Ref VPC
+
+  # EC2 instance
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref WorkloadSubneta
+      ImageId: !Ref LatestAmiId
+      Ipv6AddressCount: 1
+      IamInstanceProfile: !Ref InstanceProfile
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: true
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-instance-single-${AWS::StackName}
+
+  # Security Group (EC2 instance)
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: EC2 Instance Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-vpc-single-instance-security-group-${AWS::StackName}
+
+  InstanceSecurityGroupEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing egress traffic (IPv4)
+      IpProtocol: -1
+      CidrIp: 0.0.0.0/0
+
+  InstanceSecurityGroupEgressIPv6:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      Description: Allowing egress traffic (IPv6)
+      IpProtocol: -1
+      CidrIpv6: ::/0
+
+  # Security Group (VPC Lattice service network association)
+  VpcLatticeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: VPC Lattice VPC association Security Group
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub consumer-vpc-single-vpclattice-security-group-${AWS::StackName}
+
+  VpcLatticeSecurityGroupIngressInstanceHTTPS:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VpcLatticeSecurityGroup
+      Description: Allowing HTTPS traffic from the EC2 instance
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref InstanceSecurityGroup
+
+Outputs:
+  InstanceId:
+    Description: Consumer EC2 Instance ID (single consumption model)
+    Value: !Ref Instance

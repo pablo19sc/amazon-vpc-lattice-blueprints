@@ -1,7 +1,7 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
 AWSTemplateFormatVersion: 2010-09-09
-Description: Central VPC endpoints VPC
+Description: Central VPC endpoints VPC, resource gateway and resource configurations (group and single consumption models)
 Transform: 'AWS::LanguageExtensions'
 
 Mappings:
@@ -154,7 +154,8 @@ Resources:
         - !Ref RGWSubnetb
       VpcIdentifier: !Ref VPC
 
-  # ---------- RESOURCE CONFIGURATION (GROUP) ----------
+  # ---------- RESOURCE CONFIGURATIONS: GROUP CONSUMPTION MODEL ----------
+  # Resource configuration (group) - consumed in consumer_group.yaml
   ResourceConfigurationGroup:
     Type: AWS::VpcLattice::ResourceConfiguration
     Properties:
@@ -165,10 +166,33 @@ Resources:
       ProtocolType: TCP
       ResourceConfigurationType: GROUP
       GroupDomain: !Sub '${AWS::Region}.amazonaws.com'
-  
+
+  # CloudWatch Logs log group (group resource configuration - endpoints owner view)
+  ResourceConfigurationGroupAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vpclattice/${AWS::StackName}/resource-config-group'
+      RetentionInDays: 7
+
+  # Access log subscription (group resource configuration)
+  ResourceConfigurationGroupAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt ResourceConfigurationGroup.Arn
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ResourceConfigurationGroupAccessLogs}'
+
+  # ---------- RESOURCE CONFIGURATIONS: SINGLE CONSUMPTION MODEL ----------
+  # CloudWatch Logs log group (single resource configurations - endpoints owner view)
+  ResourceConfigurationSingleAccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/vpclattice/${AWS::StackName}/resource-config-single'
+      RetentionInDays: 7
+
   # ---------- VPC ENDPOINTS & RESOURCE CONFIGURATIONS ----------
   # For::Each iteration: per VPC endpoint type (ssm, ssmmessages, ec2messages, sts)
-  # Resources to create: 4 VPC endpoints, 4 CHILD Resource Configurations (members of the group)
+  # Resources to create (per endpoint): 1 VPC endpoint, 1 CHILD resource configuration (member of the group),
+  # 1 SINGLE resource configuration (consumed in consumer_single.yaml)
   'Fn::ForEach::EndpointTypes':
     - EndpointType
     - [ssm, ssmmessages, ec2messages, sts]
@@ -185,19 +209,76 @@ Resources:
             - !Ref EndpointsSubnetb
           VpcEndpointType: 'Interface'
           VpcId: !Ref VPC
+      # Resource configuration (child of the group)
       '${EndpointType}ResourceConfiguration':
         Type: AWS::VpcLattice::ResourceConfiguration
         Properties:
           Name: !Sub 'resource-config-${EndpointType}'
           ResourceConfigurationGroupId: !GetAtt ResourceConfigurationGroup.Id
+          PortRanges:
+            - 443
           CustomDomainName: !Sub '${EndpointType}.${AWS::Region}.amazonaws.com'
           ResourceConfigurationDefinition:
             DnsResource:
               DomainName: !Sub '${EndpointType}.${AWS::Region}.amazonaws.com'
               IpAddressType: IPV4
           ResourceConfigurationType: CHILD
+      # Resource configuration (single)
+      '${EndpointType}ResourceConfigurationSingle':
+        Type: AWS::VpcLattice::ResourceConfiguration
+        Properties:
+          Name: !Sub 'rc-single-${EndpointType}'
+          ResourceGatewayId: !Ref ResourceGateway
+          PortRanges:
+            - 443
+          ProtocolType: TCP
+          CustomDomainName: !Sub '${EndpointType}.${AWS::Region}.amazonaws.com'
+          ResourceConfigurationDefinition:
+            DnsResource:
+              DomainName: !Sub '${EndpointType}.${AWS::Region}.amazonaws.com'
+              IpAddressType: IPV4
+          ResourceConfigurationType: SINGLE
+
+  # Access log subscriptions (1 per single resource configuration, shared log group)
+  # Chained with DependsOn: each subscription updates the CloudWatch Logs resource policy for log delivery,
+  # and concurrent updates fail with OperationAbortedException.
+  ssmResourceConfigurationSingleAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    DependsOn: ResourceConfigurationGroupAccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt ssmResourceConfigurationSingle.Arn
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ResourceConfigurationSingleAccessLogs}'
+
+  ssmmessagesResourceConfigurationSingleAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    DependsOn: ssmResourceConfigurationSingleAccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt ssmmessagesResourceConfigurationSingle.Arn
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ResourceConfigurationSingleAccessLogs}'
+
+  ec2messagesResourceConfigurationSingleAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    DependsOn: ssmmessagesResourceConfigurationSingleAccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt ec2messagesResourceConfigurationSingle.Arn
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ResourceConfigurationSingleAccessLogs}'
+
+  stsResourceConfigurationSingleAccessLogSubscription:
+    Type: AWS::VpcLattice::AccessLogSubscription
+    DependsOn: ec2messagesResourceConfigurationSingleAccessLogSubscription
+    Properties:
+      ResourceIdentifier: !GetAtt stsResourceConfigurationSingle.Arn
+      DestinationArn: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:${ResourceConfigurationSingleAccessLogs}'
 
 Outputs:
   ResourceConfigurationGroup:
-    Description: Group resource configuration ID (associate this to the service network)
+    Description: Group resource configuration ID (associate this to the group service network)
     Value: !GetAtt ResourceConfigurationGroup.Id
+  ResourceConfigurationsSingle:
+    Description: Single resource configuration IDs, comma-separated (associate each to the single service network)
+    Value: !Join
+      - ','
+      - - !GetAtt ssmResourceConfigurationSingle.Id
+        - !GetAtt ssmmessagesResourceConfigurationSingle.Id
+        - !GetAtt ec2messagesResourceConfigurationSingle.Id
+        - !GetAtt stsResourceConfigurationSingle.Id

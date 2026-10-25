@@ -12,6 +12,7 @@
 | [`patterns/2-multi_account/`](patterns/2-multi_account/) | Cross-account sharing with AWS RAM, in the centralized and distributed models |
 | [`patterns/3-advanced_architectures/`](patterns/3-advanced_architectures/) | Designs beyond basic consumer-provider connectivity |
 | [`patterns/4-auth_policies/`](patterns/4-auth_policies/) | A reference toolkit, not a deployable pattern: auth policy snippets (`policies/`) and SigV4/SigV4A signing (`signing/`) |
+| [`patterns/5-agentic_architectures/`](patterns/5-agentic_architectures/) | AI agents connecting to MCP servers, REST APIs and other agents, with and without an AI gateway; shared agent, tool and gateway code in `applications/` |
 | [`patterns/tf_modules/`](patterns/tf_modules/) | Shared Terraform modules, the only shared-module root |
 
 Each deployable pattern has a `README.md` (architecture, testing, cleanup), a `terraform/` and a `cloudformation/` directory, laid out as in [Directory layout](CONVENTIONS.md#2-directory-layout). Patterns are building blocks: a real design often composes several, so start from the closest one rather than looking for a directory per use case.

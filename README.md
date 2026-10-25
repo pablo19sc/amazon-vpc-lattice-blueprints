@@ -59,10 +59,11 @@ Amazon VPC Lattice Blueprints have been designed to be consumed in the following
 | [2. Multi-AWS Account](./patterns/2-multi_account/) | Cross-account sharing of a Lambda service and an Aurora resource configuration via AWS RAM, in centralized and distributed models | CloudFormation, Terraform |
 | [3. Advanced Architectures](./patterns/3-advanced_architectures/) | Real-world architectures that go beyond the basic consumer–producer setup | CloudFormation, Terraform |
 | [4. Auth Policies & SigV4](./patterns/4-auth_policies/) | Reference toolkit (not a deployable pattern) for identity-based access control: how to SigV4-sign requests and a cookbook of auth policies to apply to any pattern. Every service-exposing pattern ships `AWS_IAM` auth with an open policy, ready to lock down | Reference |
+| [5. Agentic Architectures](./patterns/5-agentic_architectures/) | Agents connecting to MCP servers, REST APIs and other agents, with no AI gateway, through a self-hosted AI gateway (LiteLLM), and through Amazon Bedrock AgentCore Gateway | CloudFormation, Terraform |
 
 ## Which pattern do I need?
 
-Browse the [Patterns](#patterns) table above to see what's available: patterns 1-3 are complete, deployable examples with testing and cleanup steps, and pattern 4 is a reference toolkit you apply on top of any of them.
+Browse the [Patterns](#patterns) table above to see what's available: patterns 1-3 and 5 are complete, deployable examples with testing and cleanup steps, and pattern 4 is a reference toolkit you apply on top of any of them.
 
 To match your **specific** use case to the right pattern, the fastest path is to ask your preferred AI agent and model: install the [agent skill](./skills/vpc-lattice-blueprints/) (or give it [`SKILLS.md`](./SKILLS.md) as pasted context — see the tip at the top of this README) and describe your scenario. With that context the agent can reason about VPC Lattice, recommend the pattern that fits, and explain how to compose or secure it. An agent reading this repository remotely can start from [`llms.txt`](./llms.txt), the index of every pattern; an agent working in a local clone can start from [`AGENTS.md`](./AGENTS.md).
 

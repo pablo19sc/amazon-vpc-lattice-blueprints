@@ -24,6 +24,7 @@ from typing import Optional
 
 import boto3
 import httpx
+import openai
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
@@ -311,11 +312,11 @@ def ask_triage(issue: str) -> str:
 def build_model(llm=None):
     """The model: Amazon Bedrock, or the gateway's OpenAI-compatible endpoint (llm, from the registry)."""
     if llm:
+        # One client for this invocation, passed as `client`: with `client_args`, Strands opens and closes an OpenAI
+        # client on every model call, which also closes the SigV4-signing HTTP client after the first call
         http_client = httpx.AsyncClient(auth=LATTICE_AUTH, headers=_litellm_headers(), timeout=120)
-        return OpenAIModel(
-            client_args={"base_url": llm["url"], "api_key": "via-x-litellm-api-key", "http_client": http_client},
-            model_id=llm["models"][0],
-        )
+        client = openai.AsyncOpenAI(base_url=llm["url"], api_key="via-x-litellm-api-key", http_client=http_client)
+        return OpenAIModel(client=client, model_id=llm["models"][0])
     return BedrockModel(model_id=MODEL_ID, boto_session=session)
 
 

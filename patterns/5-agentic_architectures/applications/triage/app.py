@@ -20,6 +20,7 @@ import time
 
 import boto3
 import httpx
+import openai
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.config import Config
@@ -86,8 +87,10 @@ def build_model():
     transport = httpx.AsyncHTTPTransport(socket_options=[(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)])
     http_client = httpx.AsyncClient(auth=LatticeAuth(), headers={"x-litellm-api-key": f"Bearer {key}"}, timeout=120,
                                     transport=transport)
-    return OpenAIModel(client_args={"base_url": llm["baseUrl"], "api_key": "via-x-litellm-api-key", "http_client": http_client},
-                       model_id=llm["models"][0])
+    # One long-lived client, passed as `client`: with `client_args`, Strands closes the client (and the SigV4-signing
+    # HTTP client) after every model call
+    client = openai.AsyncOpenAI(base_url=llm["baseUrl"], api_key="via-x-litellm-api-key", http_client=http_client)
+    return OpenAIModel(client=client, model_id=llm["models"][0])
 
 
 agent = Agent(

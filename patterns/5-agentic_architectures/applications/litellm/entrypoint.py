@@ -35,7 +35,8 @@ KEYS = {
         "max_budget": float(os.environ.get("AGENT_RUNTIME_BUDGET", "5")),
         "object_permission": {
             "mcp_servers": ["tickets", "directory"],
-            "mcp_tool_permissions": {"directory": ["getEmployee", "listEmployees"]},
+            # Tool names as LiteLLM lists them: the OpenAPI operationIds in lower case (getEmployee -> getemployee)
+            "mcp_tool_permissions": {"directory": ["getemployee", "listemployees"]},
             "agents": ["triage"],
         },
     },
@@ -71,20 +72,33 @@ def call(method, path, body=None):
         return 0, str(error)
 
 
+def agent_ids():
+    """Agent name -> agent ID. Key permissions name agents by ID, and LiteLLM assigns the IDs of config agents."""
+    status, reply = call("GET", "/v1/agents")
+    agents = json.loads(reply) if status == 200 else []
+    agents = agents.get("agents", []) if isinstance(agents, dict) else agents
+    return {agent["agent_name"]: agent["agent_id"] for agent in agents}
+
+
 def ensure_keys():
+    ids = agent_ids()
     for alias, spec in KEYS.items():
         value = os.environ[spec["secret_env"]]
+        permission = dict(spec["object_permission"])
+        if "agents" in permission:
+            permission["agents"] = [ids.get(name, name) for name in permission["agents"]]
         body = {
             "key": value if value.startswith("sk-") else f"sk-{value}",  # LiteLLM keys start with sk-
             "key_alias": alias,
             "models": spec["models"],
             "max_budget": spec["max_budget"],
-            "object_permission": spec["object_permission"],
+            "object_permission": permission,
         }
         status, reply = call("POST", "/key/generate", body)
         if status >= 400:  # the key already exists (task restart): apply the current permissions instead
             status, reply = call("POST", "/key/update", body)
-        print(json.dumps({"key_alias": alias, "status": status, "reply": reply[:300]}), flush=True)
+        # Log the outcome only: a successful reply contains the key itself
+        print(json.dumps({"key_alias": alias, "status": status, **({"error": reply[:300]} if status >= 400 else {})}), flush=True)
 
 
 def main():

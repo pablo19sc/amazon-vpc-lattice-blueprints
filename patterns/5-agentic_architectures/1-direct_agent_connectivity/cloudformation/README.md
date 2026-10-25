@@ -2,8 +2,6 @@
 
 CloudFormation implementation of the Direct Agent Connectivity pattern. For the architecture, what gets deployed, and the connectivity testing steps, see the [pattern README](../README.md).
 
-Each template matches a Terraform file, except `dns.yaml` (in Terraform, the private hosted zones are in `central.tf`).
-
 | Template | Stack | Resources |
 |----------|-------|-----------|
 | `common.yaml` | `vpclattice-agentic-direct-common` | Amazon ECR repositories, the S3 bucket for packaged Lambda code, Amazon ECS cluster, application log group and IAM roles |

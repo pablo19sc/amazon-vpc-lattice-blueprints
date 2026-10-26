@@ -6,7 +6,7 @@ This pattern connects AI agents directly to the tools, APIs and agents they call
 
 ![Direct Agent Connectivity](../../../images/pattern5_architecture1.png)
 
-> **Note**: To compare the use cases in this section and choose between an architecture with or without an AI gateway, see the [Agentic Architectures overview](../).
+> **Note**: To compare this pattern with the others in this section, with and without an AI gateway, see the [Agentic Architectures overview](../).
 
 ## Simple and secure agent connectivity
 

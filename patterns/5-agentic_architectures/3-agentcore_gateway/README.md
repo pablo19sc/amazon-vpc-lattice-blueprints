@@ -18,7 +18,7 @@ flowchart LR
   RC2 --> X["triage A2A agent<br/>(Amazon ECS, triage VPC)"]
 ```
 
-> **Note**: Some AgentCore integrations are native and need no VPC Lattice: an agent on AgentCore Runtime without a VPC calls AgentCore Gateway directly with its IAM role (use VPC mode only when the agent must also reach private resources itself), and AWS Lambda functions and Amazon Bedrock models are native AgentCore Gateway targets. Using them directly is the best practice, and this pattern does so, so the VPC Lattice parts show where a VPC is involved. To compare the use cases in this section, see the [Agentic Architectures overview](../).
+> **Note**: Some AgentCore integrations are native and need no VPC Lattice: an agent on AgentCore Runtime without a VPC calls AgentCore Gateway directly with its IAM role (use VPC mode only when the agent must also reach private resources itself), and AWS Lambda functions and Amazon Bedrock models are native AgentCore Gateway targets. Using them directly is the best practice, and this pattern does so, so the VPC Lattice parts show where a VPC is involved. To compare this pattern with the others in this section, see the [Agentic Architectures overview](../).
 
 ## How VPC Lattice simplifies private connectivity to and from AgentCore Gateway
 

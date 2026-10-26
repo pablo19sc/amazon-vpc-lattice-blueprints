@@ -4,7 +4,8 @@
 
 GET /employees, GET /employees/{id} and POST /employees, running as an AWS Lambda function. It is reached through a
 VPC Lattice service (Lambda target, event structure V2) or a private Amazon API Gateway REST API (Lambda proxy
-integration), so it accepts both event formats. Every response includes the caller identity the network passed in,
+integration), so it accepts both event formats. gateway_handler serves the same operations as the tools of an
+Amazon Bedrock AgentCore Gateway Lambda target. Every response includes the caller identity the network passed in,
 so the tests can show who reached the API. Employees are kept in memory: this is a connectivity demo.
 """
 import base64
@@ -63,3 +64,24 @@ def lambda_handler(event, context):
             return _response(404, {"error": f"Employee '{parts[1]}' not found", "caller": caller})
         return _response(200, {"employee": employee, "caller": caller})
     return _response(404, {"error": f"No route for {method} {path}", "caller": caller})
+
+
+# ---------- AMAZON BEDROCK AGENTCORE GATEWAY (LAMBDA TARGET) ----------
+# The gateway invokes the function with the tool's arguments as the event, and the tool name
+# (<target>___<tool>) in the client context. Each tool maps to one of the API's operations.
+TOOL_ROUTES = {
+    "listEmployees": lambda args: ("GET", "/employees", None),
+    "getEmployee": lambda args: ("GET", f"/employees/{args.get('id', '')}", None),
+    "createEmployee": lambda args: ("POST", "/employees", json.dumps(args)),
+}
+
+
+def gateway_handler(event, context):
+    tool_name = context.client_context.custom["bedrockAgentCoreToolName"].split("___", 1)[-1]
+    route = TOOL_ROUTES.get(tool_name)
+    if route is None:
+        return {"error": f"Unknown tool: {tool_name}"}
+    method, path, body = route(event or {})
+    # The gateway calls with its own service role; the API sees the Lambda target, not the agent behind it
+    response = lambda_handler({"method": method, "path": path, "body": body, "requestContext": {"identity": {"principal": "AgentCore Gateway (Lambda target)"}}}, context)
+    return {"status": response["statusCode"], **json.loads(response["body"])}

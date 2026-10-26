@@ -10,7 +10,8 @@ How the agent reaches its tools, API, peer agents and LLM depends on CONNECTIVIT
 - direct: each MCP server, API and agent is a VPC Lattice service, called with SigV4 (vpc-lattice-svcs).
 - self_hosted_gateway: everything goes through the AI gateway (a VPC Lattice service), with the agent's virtual key.
   The agent finds the gateway's endpoints (tools, agents and model) in AWS Agent Registry on every invocation.
-- agentcore_gateway: tools and agents go through an Amazon Bedrock AgentCore Gateway (IAM inbound, SigV4).
+- agentcore_gateway: everything goes through an Amazon Bedrock AgentCore Gateway, signed with the agent's IAM role
+  (SigV4, bedrock-agentcore). The agent finds the gateway's endpoints in AWS Agent Registry on every invocation.
 
 An invocation payload is either {"prompt": "..."} (the LLM decides which tools to call) or a deterministic test
 action such as {"action": "call_tool", ...}. The actions return the HTTP status of every upstream call, so the
@@ -88,6 +89,10 @@ class SigV4HttpxAuth(httpx.Auth):
 
 LATTICE_AUTH = SigV4HttpxAuth("vpc-lattice-svcs", unsigned_payload=True)
 GATEWAY_AUTH = SigV4HttpxAuth("bedrock-agentcore", unsigned_payload=False)
+# Signing for every call to a backend or gateway: AgentCore Gateway, or VPC Lattice in the other modes
+AUTH = GATEWAY_AUTH if MODE == "agentcore_gateway" else LATTICE_AUTH
+# The modes where the agent reaches everything through a gateway described in AWS Agent Registry
+GATEWAY_MODES = ("self_hosted_gateway", "agentcore_gateway")
 
 
 def _litellm_headers():
@@ -101,14 +106,7 @@ def _litellm_headers():
     return {"x-litellm-api-key": f"Bearer {_litellm_headers.key}"}
 
 
-# ---------- ENDPOINTS PER CONNECTIVITY MODE ----------
-def gateway_base_url():
-    """AgentCore Gateway base URL (GATEWAY_URL may be given with or without the /mcp path)."""
-    url = os.environ["GATEWAY_URL"].rstrip("/")
-    return url[: -len("/mcp")] if url.endswith("/mcp") else url
-
-
-# ---------- SERVICE CATALOG (AWS AGENT REGISTRY, DIRECT MODE) ----------
+# ---------- SERVICE CATALOG (AWS AGENT REGISTRY) ----------
 def load_catalog():
     """Read every approved record in the registry and return {record name: {type, description, url, ...}}.
 
@@ -144,9 +142,9 @@ def load_catalog():
             api = json.loads(descriptors["custom"]["data"])
             entry = {"type": "REST API", "url": api["baseUrl"],
                      "operations": [f"{o['method']} {o['path']}" for o in api.get("operations", [])]}
-        elif "custom" in descriptors and json.loads(descriptors["custom"]["data"]).get("protocol") == "openai":
+        elif "custom" in descriptors and json.loads(descriptors["custom"]["data"]).get("protocol") in ("openai", "anthropic"):
             llm = json.loads(descriptors["custom"]["data"])
-            entry = {"type": "LLM", "url": llm["baseUrl"], "models": llm.get("models", [])}
+            entry = {"type": "LLM", "url": llm["baseUrl"], "models": llm.get("models", []), "protocol": llm["protocol"]}
         else:
             continue
         catalog[record["name"]] = {"description": record.get("description"), **entry}
@@ -162,19 +160,10 @@ def _catalog_url(kind, name=None):
 
 
 def mcp_endpoints(catalog=None):
-    """MCP servers this agent uses: list of (name, url, auth, headers)."""
-    if MODE in ("direct", "self_hosted_gateway"):
-        # Both find their MCP servers in the registry: the backends themselves (direct) or the gateway's endpoint
-        return [(name, e["url"], LATTICE_AUTH, _litellm_headers())
-                for name, e in (catalog or load_catalog()).items() if e["type"] == "MCP server"]
-    return [("agentcore-gateway", f"{gateway_base_url()}/mcp", GATEWAY_AUTH, {})]
-
-
-def a2a_endpoint():
-    """Triage agent (A2A JSON-RPC): (url, auth, headers)."""
-    if MODE in ("direct", "self_hosted_gateway"):
-        return _catalog_url("A2A agent")[1], LATTICE_AUTH, _litellm_headers()
-    return f"{gateway_base_url()}/{os.environ.get('TRIAGE_TARGET', 'triage')}/invocations", GATEWAY_AUTH, {}
+    """MCP servers this agent uses, found in the registry (the backends themselves, or the gateway's MCP endpoint):
+    list of (name, url, auth, headers)."""
+    return [(name, e["url"], AUTH, _litellm_headers())
+            for name, e in (catalog or load_catalog()).items() if e["type"] == "MCP server"]
 
 
 # ---------- RAW CALLS (DETERMINISTIC TEST ACTIONS) ----------
@@ -211,9 +200,10 @@ def mcp_request(url, auth, headers, method, params=None):
 
 
 def a2a_send(text, url=None):
-    """Send one A2A message/send request and return the HTTP status and the agent's text reply."""
-    default_url, auth, headers = a2a_endpoint() if url is None else (None, LATTICE_AUTH, _litellm_headers())
-    url = url or default_url
+    """Send one A2A message/send request (by default, to the first agent in the registry) and return the HTTP status
+    and the agent's text reply."""
+    url = url or _catalog_url("A2A agent")[1]
+    auth, headers = AUTH, _litellm_headers()
     payload = {
         "jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": "message/send",
         "params": {"message": {"kind": "message", "role": "user", "messageId": str(uuid.uuid4()),
@@ -303,19 +293,27 @@ def send_agent_message(service: str, text: str) -> str:
     return json.dumps(a2a_send(text, url=_discovered(service, "A2A agent")))
 
 
-@tool
-def ask_triage(issue: str) -> str:
-    """Ask the triage agent which priority (low, medium, high) an issue deserves."""
-    return json.dumps(a2a_send(issue))
+async def _drop_api_key(request):
+    """The Anthropic SDK always sends its API key as x-api-key; AgentCore Gateway accepts only one credential, the SigV4
+    Authorization header. Runs after signing, and x-api-key isn't signed."""
+    request.headers.pop("x-api-key", None)
 
 
 def build_model(llm=None):
-    """The model: Amazon Bedrock, or the gateway's OpenAI-compatible endpoint (llm, from the registry)."""
+    """The model: Amazon Bedrock, or the gateway's model endpoint (llm, from the registry), in the API its record names:
+    OpenAI Chat Completions ("openai") or the Anthropic Messages API ("anthropic")."""
+    if llm and llm["protocol"] == "anthropic":
+        from strands.models.anthropic import AnthropicModel  # only the gateways that serve the Messages API need it
+
+        # Strands creates the Anthropic client once and reuses it, so the SigV4-signing HTTP client stays open
+        http_client = httpx.AsyncClient(auth=AUTH, timeout=120, event_hooks={"request": [_drop_api_key]})
+        return AnthropicModel(client_args={"base_url": llm["url"], "api_key": "signed-with-sigv4", "http_client": http_client},
+                              model_id=llm["models"][0], max_tokens=4096)
     if llm:
         # One client for this invocation, passed as `client`: with `client_args`, Strands opens and closes an OpenAI
         # client on every model call, which also closes the SigV4-signing HTTP client after the first call
-        http_client = httpx.AsyncClient(auth=LATTICE_AUTH, headers=_litellm_headers(), timeout=120)
-        client = openai.AsyncOpenAI(base_url=llm["url"], api_key="via-x-litellm-api-key", http_client=http_client)
+        http_client = httpx.AsyncClient(auth=AUTH, headers=_litellm_headers(), timeout=120)
+        client = openai.AsyncOpenAI(base_url=llm["url"], api_key="signed-with-sigv4", http_client=http_client)
         return OpenAIModel(client=client, model_id=llm["models"][0])
     return BedrockModel(model_id=MODEL_ID, boto_session=session)
 
@@ -355,17 +353,15 @@ def _tool_status(tool_result):
 def trace(messages, catalog=None):
     """Summarize the calls an LLM-driven invocation made: each model turn, what it decided, and each tool call."""
     model, mcp_server, steps = "model in Amazon Bedrock (bedrock-runtime)", None, []
-    if MODE == "self_hosted_gateway":
-        # The agent reads the registry, then loads the tools its virtual key allows from the gateway's MCP endpoint
+    if MODE in GATEWAY_MODES:
+        # The agent reads the registry, then loads the tools it may use from the gateway's MCP endpoint
         llm = next(name for name, e in catalog.items() if e["type"] == "LLM")
         mcp_server = next((name for name, e in catalog.items() if e["type"] == "MCP server"), None)
         model = f"model {catalog[llm]['models'][0]} through {llm}"
         steps = [{"call": TOOL_TARGETS["discover_services"]({}), "status": ", ".join(catalog)}]
         if mcp_server:
-            steps.append({"call": f"{mcp_server}: MCP tools/list", "detail": "load the tools this agent's virtual key allows"})
-    elif MODE != "direct":
-        # The agent loads its tools from the gateway's MCP endpoint before the first model call
-        steps = [{"call": f"{mcp_endpoints()[0][0]}: tools/list", "detail": "load the MCP tools"}]
+            allowed = "this agent's virtual key allows" if MODE == "self_hosted_gateway" else "the gateway's policy allows"
+            steps.append({"call": f"{mcp_server}: MCP tools/list", "detail": f"load the tools {allowed}"})
     pending = {}
     for message in messages:
         content = message.get("content", [])
@@ -392,9 +388,9 @@ def run_prompt(prompt):
     if MODE == "direct":
         # No backends configured: the model discovers them in AWS Agent Registry and calls them through VPC Lattice
         tools, system_prompt = [discover_services, call_mcp_tool, call_rest_api, send_agent_message], SYSTEM_PROMPT + DISCOVERY_PROMPT
-    elif MODE == "self_hosted_gateway":
+    else:
         # No gateway configured: the agent reads the gateway's endpoints in AWS Agent Registry. The tools come from
-        # the gateway's MCP endpoint (only those this agent's virtual key allows), the agents from their records.
+        # the gateway's MCP endpoint (only those the gateway allows this agent), the agents from their records.
         catalog = load_catalog()
         llm = next((e for e in catalog.values() if e["type"] == "LLM"), None)
         if llm is None:
@@ -405,10 +401,6 @@ def run_prompt(prompt):
         clients = [MCPClient(url=url, headers=headers or None, auth_provider=auth) for _, url, auth, headers in mcp_endpoints(catalog)]
         tools = clients + ([send_agent_message] if agents else [])
         system_prompt = SYSTEM_PROMPT + (f" To ask another agent, call send_agent_message with one of these agents: {', '.join(agents)}." if agents else "")
-    else:
-        clients = [MCPClient(url=url, headers=headers or None, auth_provider=auth, prefix=name.replace("-", "_"))
-                   for name, url, auth, headers in mcp_endpoints()]
-        tools, system_prompt = clients + [ask_triage], SYSTEM_PROMPT
     agent = Agent(model=build_model(llm), system_prompt=system_prompt, tools=tools)
     reply = str(agent(prompt))
     return {"reply": reply, "calls": trace(agent.messages, catalog)}

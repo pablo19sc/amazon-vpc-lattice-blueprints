@@ -4,8 +4,8 @@
 
 Minimal MCP server (Streamable HTTP transport, stateless, JSON responses) running as an AWS Lambda function.
 It is reached through a VPC Lattice service (Lambda target, event structure V2) or a private Amazon API Gateway
-REST API (Lambda proxy integration), so it accepts both event formats. Tickets are kept in memory: this is a
-connectivity demo, not a ticketing system.
+REST API (Lambda proxy integration), so it accepts both event formats. server.py serves the same handler from a
+container. Tickets are kept in memory: this is a connectivity demo, not a ticketing system.
 """
 import base64
 import json

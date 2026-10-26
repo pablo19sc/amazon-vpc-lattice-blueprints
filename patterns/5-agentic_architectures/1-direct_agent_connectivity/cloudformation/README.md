@@ -17,7 +17,7 @@ CloudFormation implementation of the Direct Agent Connectivity pattern. For the 
 - **AWS CLI**: Installed and configured, with the Session Manager plugin (for ECS Exec in the tests)
 - **Docker**: With `buildx`, to build `linux/arm64` images
 - **Make**: Installed
-- **Custom domain and certificate**: a domain for the services (`HOSTED_ZONE_NAME`) and an ACM certificate that covers `*.<HOSTED_ZONE_NAME>` (`CERTIFICATE_ARN`)
+- **Custom domain and certificate**: a domain for the services (`HOSTED_ZONE_NAME`) and an ACM certificate that covers `*.<HOSTED_ZONE_NAME>` (`CERTIFICATE_ARN`), in the account and Region you deploy to
 
 ## Deployment
 
